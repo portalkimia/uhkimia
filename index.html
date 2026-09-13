@@ -347,18 +347,33 @@
       <!-- FORM BODY DENGAN KARTU TANYA-JAWAB -->
       <form id="form-jadwal" onsubmit="handleFormJadwalSubmit(event)" class="space-y-4">
         
-        <!-- KARTU 1: NAMA GURU -->
-        <div class="gform-card p-5 sm:p-6">
-          <label for="input-nama-guru" class="block text-sm font-bold text-slate-800 mb-1">
-            1. Nama Guru Kimia Pengampu <span class="text-rose-600">*</span>
-          </label>
-          <p class="text-xs text-slate-500 mb-3">Tuliskan nama lengkap Anda beserta gelar pengampu</p>
+        <!-- KARTU 1: NAMA GURU (DROPDOWN PRAKTIS) -->
+        <div class="gform-card p-5 sm:p-6 space-y-2.5">
+          <div class="flex items-center justify-between">
+            <label for="select-nama-guru" class="block text-sm font-bold text-slate-800">
+              1. Nama Guru Kimia Pengampu <span class="text-rose-600">*</span>
+            </label>
+            <span class="text-[10px] text-teal-800 font-bold bg-teal-50 px-2 py-0.5 rounded border border-teal-200">Pilih dari Daftar</span>
+          </div>
+          <p class="text-xs text-slate-500">Pilih nama Anda dari daftar guru kimia yang telah terdaftar</p>
+          
           <div class="relative">
             <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
-              <i data-lucide="user" class="w-4 h-4"></i>
+              <i data-lucide="user-check" class="w-4 h-4"></i>
             </span>
-            <input type="text" id="input-nama-guru" required placeholder="Contoh: Dra. Siti Aminah, M.Pd" class="w-full pl-10 pr-3.5 py-3 bg-slate-50/70 focus:bg-white border border-slate-300 rounded-xl text-base sm:text-sm font-medium focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none transition">
+            <select id="select-nama-guru" required onchange="handleGuruChange()" class="w-full pl-10 pr-8 py-3 bg-slate-50/70 focus:bg-white border border-slate-300 rounded-xl text-base sm:text-sm font-medium focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none transition cursor-pointer">
+              <option value="">-- Pilih Nama Guru Kimia --</option>
+              <!-- Dinamis terisi dari data Master Guru -->
+            </select>
           </div>
+
+          <!-- Opsi input manual jika memilih '+ Tuliskan Nama Lain...' -->
+          <div id="wrapper-guru-custom" class="hidden mt-2 pt-2 border-t border-dashed border-slate-200 space-y-1">
+            <label class="block text-xs font-semibold text-slate-700">Tuliskan Nama & Gelar Lengkap Pengampu:</label>
+            <input type="text" id="input-guru-custom" placeholder="Contoh: Dra. Siti Aminah, M.Pd" class="w-full px-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium focus:ring-2 focus:ring-teal-500 outline-none">
+          </div>
+
+          <p class="text-[11px] text-slate-400">Daftar guru kimia ini dapat Anda tambahkan atau kelola kapan saja melalui Panel Admin.</p>
         </div>
 
         <!-- KARTU 2: PILIHAN TINGKAT & ROMBEL KELAS (DIPERKECIL BERDASARKAN JENJANG) -->
@@ -744,6 +759,10 @@
           <i data-lucide="file-edit" class="w-4 h-4"></i>
           <span>Kelola Bank Soal</span>
         </button>
+        <button onclick="switchAdminTab('kelola-guru')" id="admin-subtab-guru" class="px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium text-slate-500 hover:text-slate-800 flex items-center gap-1.5 whitespace-nowrap">
+          <i data-lucide="users" class="w-4 h-4"></i>
+          <span>Kelola Guru Kimia</span>
+        </button>
         <button onclick="switchAdminTab('kelola-kelas')" id="admin-subtab-kelas" class="px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium text-slate-500 hover:text-slate-800 flex items-center gap-1.5 whitespace-nowrap">
           <i data-lucide="layout-grid" class="w-4 h-4"></i>
           <span>Kelola Jenis Kelas</span>
@@ -785,7 +804,72 @@
         </div>
       </div>
 
-      <!-- SUB-TAB ADMIN 2: KELOLA JENIS KELAS (FLEKSIBEL) -->
+      <!-- SUB-TAB ADMIN 2: KELOLA GURU KIMIA -->
+      <div id="admin-view-guru" class="hidden space-y-4">
+        <div class="bg-teal-50 border border-teal-200 p-4 rounded-xl text-xs text-teal-800 flex items-start gap-2.5">
+          <i data-lucide="info" class="w-4 h-4 text-teal-600 mt-0.5 flex-shrink-0"></i>
+          <div>
+            <strong>Manajemen Guru Kimia:</strong> Tambahkan nama guru pengampu kimia di sini agar otomatis muncul pada pilihan dropdown formulir jadwal guru.
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+          <!-- Form Tambah Guru Baru -->
+          <div class="lg:col-span-4 bg-white rounded-2xl shadow-sm border border-slate-200/80 p-5">
+            <h3 class="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2">
+              <i data-lucide="user-plus" class="w-4 h-4 text-teal-600"></i>
+              Tambah Guru Pengampu Baru
+            </h3>
+            
+            <form onsubmit="handleTambahGuruSubmit(event)" class="space-y-3.5">
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Nama Lengkap & Gelar <span class="text-rose-500">*</span></label>
+                <input type="text" id="input-guru-nama" required placeholder="Contoh: Dra. Siti Aminah, M.Pd" class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs outline-none focus:ring-2 focus:ring-teal-500">
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">NIP / Kode Guru</label>
+                <input type="text" id="input-guru-nip" placeholder="Contoh: NIP. 1980... / KIM-01" class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs outline-none focus:ring-2 focus:ring-teal-500">
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Keterangan / Jenjang Pengampu</label>
+                <input type="text" id="input-guru-ket" placeholder="Contoh: Pengampu Kelas 10 & 11" class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs outline-none focus:ring-2 focus:ring-teal-500">
+              </div>
+
+              <button type="submit" id="btn-tambah-guru" class="w-full py-2.5 px-4 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-lg text-xs transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs">
+                <i data-lucide="plus" class="w-4 h-4"></i>
+                <span>Simpan Guru Kimia</span>
+              </button>
+            </form>
+          </div>
+
+          <!-- Tabel List Guru Terdaftar -->
+          <div class="lg:col-span-8 bg-white rounded-2xl shadow-sm border border-slate-200/80 p-5">
+            <div class="flex items-center justify-between mb-4">
+              <h3 class="text-sm font-bold text-slate-800">Daftar Guru Kimia Terdaftar (<span id="count-guru">0</span>)</h3>
+            </div>
+            
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-xs">
+                <thead class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase">
+                  <tr>
+                    <th class="py-2.5 px-4">Nama Lengkap & Gelar</th>
+                    <th class="py-2.5 px-4">NIP / Kode</th>
+                    <th class="py-2.5 px-4">Keterangan</th>
+                    <th class="py-2.5 px-4 text-center">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody id="table-body-admin-guru" class="divide-y divide-slate-100">
+                  <!-- Dinamis terisi -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SUB-TAB ADMIN 3: KELOLA JENIS KELAS (FLEKSIBEL) -->
       <div id="admin-view-kelas" class="hidden space-y-4">
         <div class="bg-teal-50 border border-teal-200 p-4 rounded-xl text-xs text-teal-800 flex items-start gap-2.5">
           <i data-lucide="info" class="w-4 h-4 text-teal-600 mt-0.5 flex-shrink-0"></i>
@@ -1137,6 +1221,7 @@ let GAS_API_URL = (savedGasUrl && savedGasUrl.trim() !== "") ? savedGasUrl : DEF
 
 // State Global Aplikasi
 let appData = {
+  guru: [],
   kelas: [],
   bankSoal: [],
   jadwal: [],
@@ -1288,6 +1373,8 @@ async function requestApi(action, data = {}) {
       else if (action === "hapusMateri") runner.hapusMateri(data.idMateri || data.id, data.pin);
       else if (action === "tambahKelas") runner.tambahKelas(data.kelasData || data, data.pin);
       else if (action === "hapusKelas") runner.hapusKelas(data.idKelas || data.id, data.pin);
+      else if (action === "tambahGuru") runner.tambahGuru(data.guruData || data, data.pin);
+      else if (action === "hapusGuru") runner.hapusGuru(data.idGuru || data.id, data.pin);
       else if (action === "ubahPin") runner.ubahPinAdmin(data.oldPin, data.newPin);
       else if (action === "verifikasiPin") runner.verifikasiAdmin(data.pin);
       else reject(new Error("Aksi tidak dikenal"));
@@ -1386,6 +1473,25 @@ function handleOfflineSimulation(action, data) {
     appData.kelas = appData.kelas.filter(k => k.id !== id);
     localStorage.setItem("SIM_UH_OFFLINE_STORE", JSON.stringify(appData));
     return Promise.resolve({ success: true, message: "Kelas berhasil dihapus" });
+  } else if (action === "tambahGuru") {
+    const g = data.guruData || data;
+    const newG = {
+      id: "GRU-" + Math.floor(Math.random() * 9000 + 1000),
+      nama: g.nama,
+      nip: g.nip || "",
+      keterangan: g.keterangan || ""
+    };
+    if (!appData.guru) appData.guru = [];
+    appData.guru.push(newG);
+    localStorage.setItem("SIM_UH_OFFLINE_STORE", JSON.stringify(appData));
+    return Promise.resolve({ success: true, message: "Guru kimia berhasil ditambahkan" });
+  } else if (action === "hapusGuru") {
+    const id = data.idGuru || data.id;
+    if (appData.guru) {
+      appData.guru = appData.guru.filter(g => g.id !== id);
+    }
+    localStorage.setItem("SIM_UH_OFFLINE_STORE", JSON.stringify(appData));
+    return Promise.resolve({ success: true, message: "Guru kimia berhasil dihapus" });
   } else if (action === "hapusJadwal") {
     const id = data.idJadwal || data.id;
     appData.jadwal = appData.jadwal.filter(j => j.id !== id);
@@ -1620,6 +1726,13 @@ async function loadInitialData(targetTab = null) {
         });
       }
       appData = response;
+      if (!appData.guru || !Array.isArray(appData.guru) || appData.guru.length === 0) {
+        appData.guru = [
+          { id: "GRU-01", nama: "Dra. Siti Aminah, M.Pd", nip: "NIP. 197508122000032001", keterangan: "Pengampu Kimia Kelas 10 & 11" },
+          { id: "GRU-02", nama: "Budi Santoso, S.Pd", nip: "KIM-02", keterangan: "Pengampu Kimia Kelas 10" },
+          { id: "GRU-03", nama: "Ahmad Fauzi, M.Si", nip: "KIM-03", keterangan: "Pengampu Kimia Kelas 12" }
+        ];
+      }
     } else {
       loadMockData();
     }
@@ -1643,6 +1756,11 @@ async function loadInitialData(targetTab = null) {
  */
 function loadMockData() {
   appData = {
+    guru: [
+      { id: "GRU-01", nama: "Dra. Siti Aminah, M.Pd", nip: "NIP. 197508122000032001", keterangan: "Pengampu Kimia Kelas 10 & 11" },
+      { id: "GRU-02", nama: "Budi Santoso, S.Pd", nip: "KIM-02", keterangan: "Pengampu Kimia Kelas 10" },
+      { id: "GRU-03", nama: "Ahmad Fauzi, M.Si", nip: "KIM-03", keterangan: "Pengampu Kimia Kelas 12" }
+    ],
     kelas: [
       { id: "KLS-01", nama: "X-1", tingkat: "10", kategori: "Reguler", keterangan: "Kelas X-1" },
       { id: "KLS-02", nama: "X-2", tingkat: "10", kategori: "Reguler", keterangan: "Kelas X-2" },
@@ -1665,7 +1783,7 @@ function loadMockData() {
     jadwal: [
       {
         id: "JAD-MOCK-1",
-        namaGuru: "Dra. Siti Aminah",
+        namaGuru: "Dra. Siti Aminah, M.Pd",
         namaKelas: "XI-MIPA 1",
         tanggal: new Date().toISOString().substring(0, 10),
         hari: "Senin",
@@ -1704,6 +1822,7 @@ function loadMockData() {
  * Dipanggil setelah data siap
  */
 function postDataLoaded() {
+  populateGuruDropdown();
   populateKelasDropdowns();
   populateMateriDropdown();
   updateBadgesAndCounters();
@@ -1723,10 +1842,12 @@ function updateBadgesAndCounters() {
   const statTersedia = document.getElementById('stat-soal-tersedia');
   const statBelum = document.getElementById('stat-soal-belum');
   const countKelas = document.getElementById('count-kelas');
+  const countGuru = document.getElementById('count-guru');
   
   if (badgeJadwal) badgeJadwal.textContent = appData.jadwal.length;
   if (badgeSoal) badgeSoal.textContent = appData.bankSoal.length;
   if (countKelas) countKelas.textContent = appData.kelas.length;
+  if (countGuru && appData.guru) countGuru.textContent = appData.guru.length;
   
   const totalTersedia = appData.bankSoal.filter(b => b.status === 'Tersedia').length;
   const totalBelum = appData.bankSoal.filter(b => b.status !== 'Tersedia').length;
@@ -1780,6 +1901,53 @@ function switchTab(tabId) {
 }
 
 /**
+ * Mengisi Dropdown Nama Guru Kimia Pengampu
+ */
+function populateGuruDropdown() {
+  const selectGuru = document.getElementById('select-nama-guru');
+  if (!selectGuru) return;
+
+  const currentVal = selectGuru.value;
+  selectGuru.innerHTML = '<option value="">-- Pilih Nama Guru Kimia --</option>';
+
+  const list = appData.guru && appData.guru.length > 0 ? appData.guru : [];
+  list.forEach(g => {
+    const opt = document.createElement('option');
+    opt.value = g.nama;
+    opt.textContent = g.nama + (g.nip ? ` (${g.nip})` : '');
+    opt.dataset.id = g.id;
+    opt.dataset.keterangan = g.keterangan || '';
+    selectGuru.appendChild(opt);
+  });
+
+  // Opsi Tambah Manual jika guru pengganti / belum terdaftar
+  const optCustom = document.createElement('option');
+  optCustom.value = "CUSTOM";
+  optCustom.textContent = "+ Tuliskan Nama Lain (Manual)...";
+  selectGuru.appendChild(optCustom);
+
+  if (currentVal && list.some(g => g.nama === currentVal)) {
+    selectGuru.value = currentVal;
+  }
+}
+
+/**
+ * Handler saat Guru Kimia dipilih pada formulir
+ */
+function handleGuruChange() {
+  const selectGuru = document.getElementById('select-nama-guru');
+  const customWrapper = document.getElementById('wrapper-guru-custom');
+  const customInput = document.getElementById('input-guru-custom');
+  if (!selectGuru || !customWrapper) return;
+
+  if (selectGuru.value === "CUSTOM") {
+    customWrapper.classList.remove('hidden');
+    if (customInput) customInput.focus();
+  } else {
+    customWrapper.classList.add('hidden');
+  }
+}
+
 /**
  * Mengisi Dropdown Kelas pada Form & Filter Kalender
  */
@@ -2219,9 +2387,24 @@ function calculateTimePreview() {
  * Handler Kirim Form Penjadwalan UH
  */
 function handleFormJadwalSubmit(e) {
-  e.preventDefault();
+  let namaGuru = "";
+  const selectGuru = document.getElementById('select-nama-guru');
+  if (selectGuru) {
+    if (selectGuru.value === "CUSTOM") {
+      const customGuruInput = document.getElementById('input-guru-custom');
+      namaGuru = customGuruInput ? customGuruInput.value.trim() : "";
+      if (!namaGuru) {
+        Swal.fire({ icon: 'warning', title: 'Perhatian', text: 'Tuliskan nama lengkap guru kimia pengampu!', confirmButtonColor: '#0d9488' });
+        return;
+      }
+    } else {
+      namaGuru = selectGuru.value.trim();
+    }
+  } else {
+    const inputGuru = document.getElementById('input-nama-guru');
+    namaGuru = inputGuru ? inputGuru.value.trim() : "";
+  }
 
-  const namaGuru = document.getElementById('input-nama-guru').value.trim();
   const namaKelas = document.getElementById('select-kelas').value;
   const tanggal = document.getElementById('input-tanggal').value;
   const jpMulai = document.getElementById('select-jp-mulai').value;
@@ -2309,6 +2492,11 @@ function handleFormJadwalSubmit(e) {
     }).then((result) => {
       document.getElementById('form-jadwal').reset();
       resetKelasDropdown();
+      populateGuruDropdown();
+      const customGuruWrap = document.getElementById('wrapper-guru-custom');
+      if (customGuruWrap) customGuruWrap.classList.add('hidden');
+      const customGuruInput = document.getElementById('input-guru-custom');
+      if (customGuruInput) customGuruInput.value = '';
       populateMateriDropdown(null);
       initDefaultDate();
       resetStatusSoalBox();
@@ -2906,7 +3094,7 @@ function updateAdminAuthUI(isLoggedIn) {
 
 function switchAdminTab(tabName) {
   currentAdminSubTab = tabName;
-  ['soal', 'kelas', 'jadwal'].forEach(t => {
+  ['soal', 'guru', 'kelas', 'jadwal'].forEach(t => {
     const btn = document.getElementById('admin-subtab-' + t);
     const view = document.getElementById('admin-view-' + t);
     if (btn) {
@@ -2929,6 +3117,7 @@ function switchAdminTab(tabName) {
 
 function renderAdminViews() {
   renderAdminTableSoal();
+  renderAdminTableGuru();
   renderAdminTableKelas();
   renderAdminTableJadwal();
 }
@@ -3088,6 +3277,111 @@ function hapusMateriItem(idMateri) {
             Swal.fire('Terhapus!', r.message, 'success');
           } else {
             Swal.fire('Gagal', (r && r.message) || 'Gagal menghapus materi', 'error');
+          }
+        })
+        .catch((err) => {
+          Swal.fire('Kesalahan', err.message, 'error');
+        });
+    }
+  });
+}
+
+/**
+ * ============================================================================
+ * ADMIN: KELOLA GURU KIMIA (SESUAI REQUEST USER)
+ * ============================================================================
+ */
+function renderAdminTableGuru() {
+  const tbody = document.getElementById('table-body-admin-guru');
+  if (!tbody) return;
+
+  const countEl = document.getElementById('count-guru');
+  const list = appData.guru && Array.isArray(appData.guru) ? appData.guru : [];
+  if (countEl) countEl.textContent = list.length;
+
+  if (list.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="4" class="py-6 text-center text-slate-400">Belum ada guru kimia yang terdaftar.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = list.map(g => {
+    return `
+      <tr class="hover:bg-slate-50/80">
+        <td class="py-2.5 px-4 font-bold text-slate-800">${g.nama}</td>
+        <td class="py-2.5 px-4"><span class="px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-medium font-mono text-[11px]">${g.nip || '-'}</span></td>
+        <td class="py-2.5 px-4 text-slate-500">${g.keterangan || '-'}</td>
+        <td class="py-2.5 px-4 text-center">
+          <button onclick="hapusGuruItem('${g.id}')" class="p-1 rounded text-rose-600 hover:bg-rose-50" title="Hapus Guru Kimia">
+            <i data-lucide="trash-2" class="w-4 h-4"></i>
+          </button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+
+  lucide.createIcons();
+}
+
+function handleTambahGuruSubmit(e) {
+  e.preventDefault();
+
+  const nama = document.getElementById('input-guru-nama').value.trim();
+  const nip = document.getElementById('input-guru-nip').value.trim();
+  const keterangan = document.getElementById('input-guru-ket').value.trim();
+
+  if (!nama) {
+    Swal.fire({ icon: 'warning', title: 'Perhatian', text: 'Nama lengkap guru wajib diisi!', confirmButtonColor: '#0d9488' });
+    return;
+  }
+
+  const guruData = { nama, nip, keterangan };
+  const btn = document.getElementById('btn-tambah-guru');
+  btn.disabled = true;
+  btn.innerHTML = '<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> Menyimpan...';
+  lucide.createIcons();
+
+  requestApi('tambahGuru', { guruData: guruData, pin: verifiedAdminPin })
+    .then((res) => {
+      btn.disabled = false;
+      btn.innerHTML = '<i data-lucide="plus" class="w-4 h-4"></i> <span>Simpan Guru Kimia</span>';
+      lucide.createIcons();
+
+      if (res && res.success) {
+        document.getElementById('input-guru-nama').value = '';
+        document.getElementById('input-guru-nip').value = '';
+        document.getElementById('input-guru-ket').value = '';
+        loadInitialData('admin');
+        Swal.fire({ icon: 'success', title: 'Guru Ditambahkan', text: res.message, timer: 1500, showConfirmButton: false });
+      } else {
+        Swal.fire({ icon: 'error', title: 'Gagal', text: (res && res.message) || 'Gagal menambahkan guru' });
+      }
+    })
+    .catch((err) => {
+      btn.disabled = false;
+      btn.innerHTML = '<i data-lucide="plus" class="w-4 h-4"></i> <span>Simpan Guru Kimia</span>';
+      lucide.createIcons();
+      Swal.fire({ icon: 'error', title: 'Kesalahan Sistem', text: err.message });
+    });
+}
+
+function hapusGuruItem(idGuru) {
+  Swal.fire({
+    title: 'Hapus Guru Ini?',
+    text: 'Nama guru akan dihapus dari pilihan dropdown jadwal.',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonColor: '#e11d48',
+    cancelButtonColor: '#64748b',
+    confirmButtonText: 'Ya, Hapus'
+  }).then((res) => {
+    if (res.isConfirmed) {
+      requestApi('hapusGuru', { idGuru: idGuru, pin: verifiedAdminPin })
+        .then((r) => {
+          if (r && r.success) {
+            loadInitialData('admin');
+            Swal.fire('Terhapus!', r.message, 'success');
+          } else {
+            Swal.fire('Gagal', (r && r.message) || 'Gagal menghapus guru', 'error');
           }
         })
         .catch((err) => {

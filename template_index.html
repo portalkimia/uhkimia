@@ -163,18 +163,33 @@
       <!-- FORM BODY DENGAN KARTU TANYA-JAWAB -->
       <form id="form-jadwal" onsubmit="handleFormJadwalSubmit(event)" class="space-y-4">
         
-        <!-- KARTU 1: NAMA GURU -->
-        <div class="gform-card p-5 sm:p-6">
-          <label for="input-nama-guru" class="block text-sm font-bold text-slate-800 mb-1">
-            1. Nama Guru Kimia Pengampu <span class="text-rose-600">*</span>
-          </label>
-          <p class="text-xs text-slate-500 mb-3">Tuliskan nama lengkap Anda beserta gelar pengampu</p>
+        <!-- KARTU 1: NAMA GURU (DROPDOWN PRAKTIS) -->
+        <div class="gform-card p-5 sm:p-6 space-y-2.5">
+          <div class="flex items-center justify-between">
+            <label for="select-nama-guru" class="block text-sm font-bold text-slate-800">
+              1. Nama Guru Kimia Pengampu <span class="text-rose-600">*</span>
+            </label>
+            <span class="text-[10px] text-teal-800 font-bold bg-teal-50 px-2 py-0.5 rounded border border-teal-200">Pilih dari Daftar</span>
+          </div>
+          <p class="text-xs text-slate-500">Pilih nama Anda dari daftar guru kimia yang telah terdaftar</p>
+          
           <div class="relative">
             <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
-              <i data-lucide="user" class="w-4 h-4"></i>
+              <i data-lucide="user-check" class="w-4 h-4"></i>
             </span>
-            <input type="text" id="input-nama-guru" required placeholder="Contoh: Dra. Siti Aminah, M.Pd" class="w-full pl-10 pr-3.5 py-3 bg-slate-50/70 focus:bg-white border border-slate-300 rounded-xl text-base sm:text-sm font-medium focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none transition">
+            <select id="select-nama-guru" required onchange="handleGuruChange()" class="w-full pl-10 pr-8 py-3 bg-slate-50/70 focus:bg-white border border-slate-300 rounded-xl text-base sm:text-sm font-medium focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none transition cursor-pointer">
+              <option value="">-- Pilih Nama Guru Kimia --</option>
+              <!-- Dinamis terisi dari data Master Guru -->
+            </select>
           </div>
+
+          <!-- Opsi input manual jika memilih '+ Tuliskan Nama Lain...' -->
+          <div id="wrapper-guru-custom" class="hidden mt-2 pt-2 border-t border-dashed border-slate-200 space-y-1">
+            <label class="block text-xs font-semibold text-slate-700">Tuliskan Nama & Gelar Lengkap Pengampu:</label>
+            <input type="text" id="input-guru-custom" placeholder="Contoh: Dra. Siti Aminah, M.Pd" class="w-full px-3 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium focus:ring-2 focus:ring-teal-500 outline-none">
+          </div>
+
+          <p class="text-[11px] text-slate-400">Daftar guru kimia ini dapat Anda tambahkan atau kelola kapan saja melalui Panel Admin.</p>
         </div>
 
         <!-- KARTU 2: PILIHAN TINGKAT & ROMBEL KELAS (DIPERKECIL BERDASARKAN JENJANG) -->
@@ -560,6 +575,10 @@
           <i data-lucide="file-edit" class="w-4 h-4"></i>
           <span>Kelola Bank Soal</span>
         </button>
+        <button onclick="switchAdminTab('kelola-guru')" id="admin-subtab-guru" class="px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium text-slate-500 hover:text-slate-800 flex items-center gap-1.5 whitespace-nowrap">
+          <i data-lucide="users" class="w-4 h-4"></i>
+          <span>Kelola Guru Kimia</span>
+        </button>
         <button onclick="switchAdminTab('kelola-kelas')" id="admin-subtab-kelas" class="px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium text-slate-500 hover:text-slate-800 flex items-center gap-1.5 whitespace-nowrap">
           <i data-lucide="layout-grid" class="w-4 h-4"></i>
           <span>Kelola Jenis Kelas</span>
@@ -601,7 +620,72 @@
         </div>
       </div>
 
-      <!-- SUB-TAB ADMIN 2: KELOLA JENIS KELAS (FLEKSIBEL) -->
+      <!-- SUB-TAB ADMIN 2: KELOLA GURU KIMIA -->
+      <div id="admin-view-guru" class="hidden space-y-4">
+        <div class="bg-teal-50 border border-teal-200 p-4 rounded-xl text-xs text-teal-800 flex items-start gap-2.5">
+          <i data-lucide="info" class="w-4 h-4 text-teal-600 mt-0.5 flex-shrink-0"></i>
+          <div>
+            <strong>Manajemen Guru Kimia:</strong> Tambahkan nama guru pengampu kimia di sini agar otomatis muncul pada pilihan dropdown formulir jadwal guru.
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+          <!-- Form Tambah Guru Baru -->
+          <div class="lg:col-span-4 bg-white rounded-2xl shadow-sm border border-slate-200/80 p-5">
+            <h3 class="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2">
+              <i data-lucide="user-plus" class="w-4 h-4 text-teal-600"></i>
+              Tambah Guru Pengampu Baru
+            </h3>
+            
+            <form onsubmit="handleTambahGuruSubmit(event)" class="space-y-3.5">
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Nama Lengkap & Gelar <span class="text-rose-500">*</span></label>
+                <input type="text" id="input-guru-nama" required placeholder="Contoh: Dra. Siti Aminah, M.Pd" class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs outline-none focus:ring-2 focus:ring-teal-500">
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">NIP / Kode Guru</label>
+                <input type="text" id="input-guru-nip" placeholder="Contoh: NIP. 1980... / KIM-01" class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs outline-none focus:ring-2 focus:ring-teal-500">
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Keterangan / Jenjang Pengampu</label>
+                <input type="text" id="input-guru-ket" placeholder="Contoh: Pengampu Kelas 10 & 11" class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs outline-none focus:ring-2 focus:ring-teal-500">
+              </div>
+
+              <button type="submit" id="btn-tambah-guru" class="w-full py-2.5 px-4 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-lg text-xs transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs">
+                <i data-lucide="plus" class="w-4 h-4"></i>
+                <span>Simpan Guru Kimia</span>
+              </button>
+            </form>
+          </div>
+
+          <!-- Tabel List Guru Terdaftar -->
+          <div class="lg:col-span-8 bg-white rounded-2xl shadow-sm border border-slate-200/80 p-5">
+            <div class="flex items-center justify-between mb-4">
+              <h3 class="text-sm font-bold text-slate-800">Daftar Guru Kimia Terdaftar (<span id="count-guru">0</span>)</h3>
+            </div>
+            
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-xs">
+                <thead class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase">
+                  <tr>
+                    <th class="py-2.5 px-4">Nama Lengkap & Gelar</th>
+                    <th class="py-2.5 px-4">NIP / Kode</th>
+                    <th class="py-2.5 px-4">Keterangan</th>
+                    <th class="py-2.5 px-4 text-center">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody id="table-body-admin-guru" class="divide-y divide-slate-100">
+                  <!-- Dinamis terisi -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SUB-TAB ADMIN 3: KELOLA JENIS KELAS (FLEKSIBEL) -->
       <div id="admin-view-kelas" class="hidden space-y-4">
         <div class="bg-teal-50 border border-teal-200 p-4 rounded-xl text-xs text-teal-800 flex items-start gap-2.5">
           <i data-lucide="info" class="w-4 h-4 text-teal-600 mt-0.5 flex-shrink-0"></i>

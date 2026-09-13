@@ -15,6 +15,7 @@ let GAS_API_URL = (savedGasUrl && savedGasUrl.trim() !== "") ? savedGasUrl : DEF
 
 // State Global Aplikasi
 let appData = {
+  guru: [],
   kelas: [],
   bankSoal: [],
   jadwal: [],
@@ -166,6 +167,8 @@ async function requestApi(action, data = {}) {
       else if (action === "hapusMateri") runner.hapusMateri(data.idMateri || data.id, data.pin);
       else if (action === "tambahKelas") runner.tambahKelas(data.kelasData || data, data.pin);
       else if (action === "hapusKelas") runner.hapusKelas(data.idKelas || data.id, data.pin);
+      else if (action === "tambahGuru") runner.tambahGuru(data.guruData || data, data.pin);
+      else if (action === "hapusGuru") runner.hapusGuru(data.idGuru || data.id, data.pin);
       else if (action === "ubahPin") runner.ubahPinAdmin(data.oldPin, data.newPin);
       else if (action === "verifikasiPin") runner.verifikasiAdmin(data.pin);
       else reject(new Error("Aksi tidak dikenal"));
@@ -264,6 +267,25 @@ function handleOfflineSimulation(action, data) {
     appData.kelas = appData.kelas.filter(k => k.id !== id);
     localStorage.setItem("SIM_UH_OFFLINE_STORE", JSON.stringify(appData));
     return Promise.resolve({ success: true, message: "Kelas berhasil dihapus" });
+  } else if (action === "tambahGuru") {
+    const g = data.guruData || data;
+    const newG = {
+      id: "GRU-" + Math.floor(Math.random() * 9000 + 1000),
+      nama: g.nama,
+      nip: g.nip || "",
+      keterangan: g.keterangan || ""
+    };
+    if (!appData.guru) appData.guru = [];
+    appData.guru.push(newG);
+    localStorage.setItem("SIM_UH_OFFLINE_STORE", JSON.stringify(appData));
+    return Promise.resolve({ success: true, message: "Guru kimia berhasil ditambahkan" });
+  } else if (action === "hapusGuru") {
+    const id = data.idGuru || data.id;
+    if (appData.guru) {
+      appData.guru = appData.guru.filter(g => g.id !== id);
+    }
+    localStorage.setItem("SIM_UH_OFFLINE_STORE", JSON.stringify(appData));
+    return Promise.resolve({ success: true, message: "Guru kimia berhasil dihapus" });
   } else if (action === "hapusJadwal") {
     const id = data.idJadwal || data.id;
     appData.jadwal = appData.jadwal.filter(j => j.id !== id);
@@ -498,6 +520,13 @@ async function loadInitialData(targetTab = null) {
         });
       }
       appData = response;
+      if (!appData.guru || !Array.isArray(appData.guru) || appData.guru.length === 0) {
+        appData.guru = [
+          { id: "GRU-01", nama: "Dra. Siti Aminah, M.Pd", nip: "NIP. 197508122000032001", keterangan: "Pengampu Kimia Kelas 10 & 11" },
+          { id: "GRU-02", nama: "Budi Santoso, S.Pd", nip: "KIM-02", keterangan: "Pengampu Kimia Kelas 10" },
+          { id: "GRU-03", nama: "Ahmad Fauzi, M.Si", nip: "KIM-03", keterangan: "Pengampu Kimia Kelas 12" }
+        ];
+      }
     } else {
       loadMockData();
     }
@@ -521,6 +550,11 @@ async function loadInitialData(targetTab = null) {
  */
 function loadMockData() {
   appData = {
+    guru: [
+      { id: "GRU-01", nama: "Dra. Siti Aminah, M.Pd", nip: "NIP. 197508122000032001", keterangan: "Pengampu Kimia Kelas 10 & 11" },
+      { id: "GRU-02", nama: "Budi Santoso, S.Pd", nip: "KIM-02", keterangan: "Pengampu Kimia Kelas 10" },
+      { id: "GRU-03", nama: "Ahmad Fauzi, M.Si", nip: "KIM-03", keterangan: "Pengampu Kimia Kelas 12" }
+    ],
     kelas: [
       { id: "KLS-01", nama: "X-1", tingkat: "10", kategori: "Reguler", keterangan: "Kelas X-1" },
       { id: "KLS-02", nama: "X-2", tingkat: "10", kategori: "Reguler", keterangan: "Kelas X-2" },
@@ -543,7 +577,7 @@ function loadMockData() {
     jadwal: [
       {
         id: "JAD-MOCK-1",
-        namaGuru: "Dra. Siti Aminah",
+        namaGuru: "Dra. Siti Aminah, M.Pd",
         namaKelas: "XI-MIPA 1",
         tanggal: new Date().toISOString().substring(0, 10),
         hari: "Senin",
@@ -582,6 +616,7 @@ function loadMockData() {
  * Dipanggil setelah data siap
  */
 function postDataLoaded() {
+  populateGuruDropdown();
   populateKelasDropdowns();
   populateMateriDropdown();
   updateBadgesAndCounters();
@@ -601,10 +636,12 @@ function updateBadgesAndCounters() {
   const statTersedia = document.getElementById('stat-soal-tersedia');
   const statBelum = document.getElementById('stat-soal-belum');
   const countKelas = document.getElementById('count-kelas');
+  const countGuru = document.getElementById('count-guru');
   
   if (badgeJadwal) badgeJadwal.textContent = appData.jadwal.length;
   if (badgeSoal) badgeSoal.textContent = appData.bankSoal.length;
   if (countKelas) countKelas.textContent = appData.kelas.length;
+  if (countGuru && appData.guru) countGuru.textContent = appData.guru.length;
   
   const totalTersedia = appData.bankSoal.filter(b => b.status === 'Tersedia').length;
   const totalBelum = appData.bankSoal.filter(b => b.status !== 'Tersedia').length;
@@ -658,6 +695,53 @@ function switchTab(tabId) {
 }
 
 /**
+ * Mengisi Dropdown Nama Guru Kimia Pengampu
+ */
+function populateGuruDropdown() {
+  const selectGuru = document.getElementById('select-nama-guru');
+  if (!selectGuru) return;
+
+  const currentVal = selectGuru.value;
+  selectGuru.innerHTML = '<option value="">-- Pilih Nama Guru Kimia --</option>';
+
+  const list = appData.guru && appData.guru.length > 0 ? appData.guru : [];
+  list.forEach(g => {
+    const opt = document.createElement('option');
+    opt.value = g.nama;
+    opt.textContent = g.nama + (g.nip ? ` (${g.nip})` : '');
+    opt.dataset.id = g.id;
+    opt.dataset.keterangan = g.keterangan || '';
+    selectGuru.appendChild(opt);
+  });
+
+  // Opsi Tambah Manual jika guru pengganti / belum terdaftar
+  const optCustom = document.createElement('option');
+  optCustom.value = "CUSTOM";
+  optCustom.textContent = "+ Tuliskan Nama Lain (Manual)...";
+  selectGuru.appendChild(optCustom);
+
+  if (currentVal && list.some(g => g.nama === currentVal)) {
+    selectGuru.value = currentVal;
+  }
+}
+
+/**
+ * Handler saat Guru Kimia dipilih pada formulir
+ */
+function handleGuruChange() {
+  const selectGuru = document.getElementById('select-nama-guru');
+  const customWrapper = document.getElementById('wrapper-guru-custom');
+  const customInput = document.getElementById('input-guru-custom');
+  if (!selectGuru || !customWrapper) return;
+
+  if (selectGuru.value === "CUSTOM") {
+    customWrapper.classList.remove('hidden');
+    if (customInput) customInput.focus();
+  } else {
+    customWrapper.classList.add('hidden');
+  }
+}
+
 /**
  * Mengisi Dropdown Kelas pada Form & Filter Kalender
  */
@@ -1097,9 +1181,24 @@ function calculateTimePreview() {
  * Handler Kirim Form Penjadwalan UH
  */
 function handleFormJadwalSubmit(e) {
-  e.preventDefault();
+  let namaGuru = "";
+  const selectGuru = document.getElementById('select-nama-guru');
+  if (selectGuru) {
+    if (selectGuru.value === "CUSTOM") {
+      const customGuruInput = document.getElementById('input-guru-custom');
+      namaGuru = customGuruInput ? customGuruInput.value.trim() : "";
+      if (!namaGuru) {
+        Swal.fire({ icon: 'warning', title: 'Perhatian', text: 'Tuliskan nama lengkap guru kimia pengampu!', confirmButtonColor: '#0d9488' });
+        return;
+      }
+    } else {
+      namaGuru = selectGuru.value.trim();
+    }
+  } else {
+    const inputGuru = document.getElementById('input-nama-guru');
+    namaGuru = inputGuru ? inputGuru.value.trim() : "";
+  }
 
-  const namaGuru = document.getElementById('input-nama-guru').value.trim();
   const namaKelas = document.getElementById('select-kelas').value;
   const tanggal = document.getElementById('input-tanggal').value;
   const jpMulai = document.getElementById('select-jp-mulai').value;
@@ -1187,6 +1286,11 @@ function handleFormJadwalSubmit(e) {
     }).then((result) => {
       document.getElementById('form-jadwal').reset();
       resetKelasDropdown();
+      populateGuruDropdown();
+      const customGuruWrap = document.getElementById('wrapper-guru-custom');
+      if (customGuruWrap) customGuruWrap.classList.add('hidden');
+      const customGuruInput = document.getElementById('input-guru-custom');
+      if (customGuruInput) customGuruInput.value = '';
       populateMateriDropdown(null);
       initDefaultDate();
       resetStatusSoalBox();
@@ -1784,7 +1888,7 @@ function updateAdminAuthUI(isLoggedIn) {
 
 function switchAdminTab(tabName) {
   currentAdminSubTab = tabName;
-  ['soal', 'kelas', 'jadwal'].forEach(t => {
+  ['soal', 'guru', 'kelas', 'jadwal'].forEach(t => {
     const btn = document.getElementById('admin-subtab-' + t);
     const view = document.getElementById('admin-view-' + t);
     if (btn) {
@@ -1807,6 +1911,7 @@ function switchAdminTab(tabName) {
 
 function renderAdminViews() {
   renderAdminTableSoal();
+  renderAdminTableGuru();
   renderAdminTableKelas();
   renderAdminTableJadwal();
 }
@@ -1966,6 +2071,111 @@ function hapusMateriItem(idMateri) {
             Swal.fire('Terhapus!', r.message, 'success');
           } else {
             Swal.fire('Gagal', (r && r.message) || 'Gagal menghapus materi', 'error');
+          }
+        })
+        .catch((err) => {
+          Swal.fire('Kesalahan', err.message, 'error');
+        });
+    }
+  });
+}
+
+/**
+ * ============================================================================
+ * ADMIN: KELOLA GURU KIMIA (SESUAI REQUEST USER)
+ * ============================================================================
+ */
+function renderAdminTableGuru() {
+  const tbody = document.getElementById('table-body-admin-guru');
+  if (!tbody) return;
+
+  const countEl = document.getElementById('count-guru');
+  const list = appData.guru && Array.isArray(appData.guru) ? appData.guru : [];
+  if (countEl) countEl.textContent = list.length;
+
+  if (list.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="4" class="py-6 text-center text-slate-400">Belum ada guru kimia yang terdaftar.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = list.map(g => {
+    return `
+      <tr class="hover:bg-slate-50/80">
+        <td class="py-2.5 px-4 font-bold text-slate-800">${g.nama}</td>
+        <td class="py-2.5 px-4"><span class="px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-medium font-mono text-[11px]">${g.nip || '-'}</span></td>
+        <td class="py-2.5 px-4 text-slate-500">${g.keterangan || '-'}</td>
+        <td class="py-2.5 px-4 text-center">
+          <button onclick="hapusGuruItem('${g.id}')" class="p-1 rounded text-rose-600 hover:bg-rose-50" title="Hapus Guru Kimia">
+            <i data-lucide="trash-2" class="w-4 h-4"></i>
+          </button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+
+  lucide.createIcons();
+}
+
+function handleTambahGuruSubmit(e) {
+  e.preventDefault();
+
+  const nama = document.getElementById('input-guru-nama').value.trim();
+  const nip = document.getElementById('input-guru-nip').value.trim();
+  const keterangan = document.getElementById('input-guru-ket').value.trim();
+
+  if (!nama) {
+    Swal.fire({ icon: 'warning', title: 'Perhatian', text: 'Nama lengkap guru wajib diisi!', confirmButtonColor: '#0d9488' });
+    return;
+  }
+
+  const guruData = { nama, nip, keterangan };
+  const btn = document.getElementById('btn-tambah-guru');
+  btn.disabled = true;
+  btn.innerHTML = '<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> Menyimpan...';
+  lucide.createIcons();
+
+  requestApi('tambahGuru', { guruData: guruData, pin: verifiedAdminPin })
+    .then((res) => {
+      btn.disabled = false;
+      btn.innerHTML = '<i data-lucide="plus" class="w-4 h-4"></i> <span>Simpan Guru Kimia</span>';
+      lucide.createIcons();
+
+      if (res && res.success) {
+        document.getElementById('input-guru-nama').value = '';
+        document.getElementById('input-guru-nip').value = '';
+        document.getElementById('input-guru-ket').value = '';
+        loadInitialData('admin');
+        Swal.fire({ icon: 'success', title: 'Guru Ditambahkan', text: res.message, timer: 1500, showConfirmButton: false });
+      } else {
+        Swal.fire({ icon: 'error', title: 'Gagal', text: (res && res.message) || 'Gagal menambahkan guru' });
+      }
+    })
+    .catch((err) => {
+      btn.disabled = false;
+      btn.innerHTML = '<i data-lucide="plus" class="w-4 h-4"></i> <span>Simpan Guru Kimia</span>';
+      lucide.createIcons();
+      Swal.fire({ icon: 'error', title: 'Kesalahan Sistem', text: err.message });
+    });
+}
+
+function hapusGuruItem(idGuru) {
+  Swal.fire({
+    title: 'Hapus Guru Ini?',
+    text: 'Nama guru akan dihapus dari pilihan dropdown jadwal.',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonColor: '#e11d48',
+    cancelButtonColor: '#64748b',
+    confirmButtonText: 'Ya, Hapus'
+  }).then((res) => {
+    if (res.isConfirmed) {
+      requestApi('hapusGuru', { idGuru: idGuru, pin: verifiedAdminPin })
+        .then((r) => {
+          if (r && r.success) {
+            loadInitialData('admin');
+            Swal.fire('Terhapus!', r.message, 'success');
+          } else {
+            Swal.fire('Gagal', (r && r.message) || 'Gagal menghapus guru', 'error');
           }
         })
         .catch((err) => {
