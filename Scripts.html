@@ -331,9 +331,20 @@ function calculateOfflineWaktu(tanggalStr, jpMulai, jpSelesai) {
 }
 
 /**
- * Modal Pengaturan Koneksi Google Sheets (Apps Script API)
+ * Modal Pengaturan Koneksi Google Sheets (Apps Script API) - Khusus Admin
  */
 function bukaModalKoneksi() {
+  // Hanya admin yang berhak membuka pengaturan koneksi dan melihat URL GAS
+  if (!isAdminLoggedIn) {
+    Swal.fire({
+      icon: 'info',
+      title: 'Akses Dibatasi',
+      text: 'Pengaturan koneksi Google Sheets hanya dapat diakses oleh Administrator melalui Panel Admin.',
+      confirmButtonColor: '#0d9488'
+    });
+    return;
+  }
+
   Swal.fire({
     title: 'Koneksi Google Spreadsheet',
     html: `
@@ -412,6 +423,9 @@ function bukaModalKoneksi() {
   });
 }
 
+/**
+ * Update Indikator Status Server (Hanya Indikator Visual)
+ */
 function updateApiStatusIndicator() {
   const badgeText = document.getElementById('indicator-api-text');
   const badgeDot = document.getElementById('indicator-api-dot');
@@ -419,10 +433,49 @@ function updateApiStatusIndicator() {
 
   if (GAS_API_URL && GAS_API_URL.startsWith("http")) {
     badgeDot.className = "w-2 h-2 rounded-full bg-emerald-400 animate-pulse";
-    badgeText.textContent = "Google Sheets Terhubung";
+    badgeText.textContent = "Online";
   } else {
     badgeDot.className = "w-2 h-2 rounded-full bg-amber-400";
-    badgeText.textContent = "Simulasi Offline (Klik Disini)";
+    badgeText.textContent = "Offline";
+  }
+}
+
+/**
+ * Handler Segarkan Data Pengguna (Refresh tombol di Header)
+ */
+async function handleUserRefreshData() {
+  const icon = document.getElementById('icon-refresh-data');
+  if (icon) icon.classList.add('animate-spin');
+
+  try {
+    await loadInitialData(currentTab);
+    const Toast = Swal.mixin({
+      toast: true,
+      position: 'top-end',
+      showConfirmButton: false,
+      timer: 1800,
+      timerProgressBar: true
+    });
+    Toast.fire({
+      icon: 'success',
+      title: 'Data Berhasil Diperbarui!'
+    });
+  } catch (err) {
+    const Toast = Swal.mixin({
+      toast: true,
+      position: 'top-end',
+      showConfirmButton: false,
+      timer: 2500,
+      timerProgressBar: true
+    });
+    Toast.fire({
+      icon: 'error',
+      title: 'Gagal Memuat Data: ' + (err.message || 'Periksa koneksi')
+    });
+  } finally {
+    if (icon) {
+      setTimeout(() => icon.classList.remove('animate-spin'), 300);
+    }
   }
 }
 
