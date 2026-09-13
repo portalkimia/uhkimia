@@ -1,0 +1,901 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+  <title>Penjadwalan UH CBT Kimia & Bank Soal - SMA Progresif Bumi Shalawat</title>
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#f0fdfa',
+              100: '#ccfbf1',
+              500: '#14b8a6',
+              600: '#0d9488',
+              700: '#0f766e',
+              800: '#115e59',
+              900: '#134e4a',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  
+  <!-- FullCalendar 6 CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js"></script>
+  
+  <!-- SweetAlert2 CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  
+  <!-- Include Custom Styles -->
+  <?!= include('Styles'); ?>
+</head>
+<body class="bg-slate-100 min-h-screen text-slate-800 flex flex-col antialiased">
+
+  <!-- ==================== HEADER UTAMA ==================== -->
+  <header class="bg-gradient-to-r from-teal-800 via-teal-700 to-cyan-800 text-white shadow-md sticky top-0 z-40">
+    <div class="max-w-5xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-2.5">
+      
+      <!-- Brand Logo & Title -->
+      <div class="flex items-center space-x-2.5">
+        <div class="w-10 h-10 rounded-xl bg-white/10 backdrop-blur-md flex items-center justify-center border border-white/20 shadow-inner flex-shrink-0">
+          <i data-lucide="flask-conical" class="w-5 h-5 text-teal-200"></i>
+        </div>
+        <div>
+          <div class="flex items-center gap-1.5">
+            <h1 class="text-base sm:text-lg font-extrabold tracking-tight">SIM-UH KIMIA</h1>
+            <span class="px-2 py-0.2 text-[10px] font-bold bg-teal-500/30 text-teal-200 rounded-full border border-teal-400/30">CBT Portal</span>
+            
+            <!-- IKON GEMBOK RAHASIA ADMIN (Sesuai Permintaan User) -->
+            <button id="btn-secret-admin" onclick="handleSecretAdminClick()" title="Akses Administrator" class="ml-1 p-1 text-teal-200/50 hover:text-white rounded-md hover:bg-white/15 transition cursor-pointer" aria-label="Akses Admin">
+              <i data-lucide="lock" id="icon-secret-admin" class="w-3.5 h-3.5"></i>
+            </button>
+          </div>
+          <p class="text-[11px] text-teal-100 font-medium">SMA Progresif Bumi Shalawat | Penjadwalan UH CBT & Bank Soal (2026/2027)</p>
+        </div>
+      </div>
+
+      <!-- Jam Realtime Desktop & Status Koneksi Spreadsheet -->
+      <div class="text-right flex flex-col items-end gap-1">
+        <div class="flex items-center gap-2">
+          <button id="btn-api-status" onclick="bukaModalKoneksi()" title="Status Koneksi Google Sheets" class="px-2.5 py-0.5 rounded-full bg-teal-900/70 hover:bg-teal-900 border border-teal-400/40 text-[10px] text-teal-100 flex items-center gap-1.5 transition cursor-pointer shadow-sm">
+            <span id="indicator-api-dot" class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span id="indicator-api-text" class="hidden sm:inline">Google Sheets Terhubung</span>
+          </button>
+          <div id="live-clock" class="text-xs font-semibold text-teal-100 flex items-center gap-1.5 justify-end">
+            <i data-lucide="clock" class="w-3.5 h-3.5"></i>
+            <span id="clock-display">Memuat jam...</span>
+          </div>
+        </div>
+        <div class="text-[10px] text-teal-200/80 hidden sm:block">Senin-Kamis (8 JP) | Jumat (4 JP) | Sabtu (4 JP)</div>
+      </div>
+
+    </div>
+
+    <!-- ==================== NAVIGATION TABS (TOUCH FRIENDLY) ==================== -->
+    <div class="bg-teal-900/50 border-t border-teal-700/50 backdrop-blur-sm">
+      <div class="max-w-5xl mx-auto px-4 sm:px-6 flex overflow-x-auto space-x-2 py-1 scrollbar-none">
+        <button onclick="switchTab('jadwal')" id="tab-jadwal" class="tab-btn active px-3.5 py-2 text-xs sm:text-sm font-semibold text-white flex items-center gap-1.5 rounded-t-lg">
+          <i data-lucide="file-text" class="w-4 h-4"></i>
+          <span>Formulir UH</span>
+        </button>
+        <button onclick="switchTab('kalender')" id="tab-kalender" class="tab-btn px-3.5 py-2 text-xs sm:text-sm font-semibold text-teal-100 hover:text-white flex items-center gap-1.5 rounded-t-lg">
+          <i data-lucide="calendar" class="w-4 h-4"></i>
+          <span>Kalender Rekap</span>
+          <span id="badge-total-jadwal" class="px-1.5 py-0.2 text-[10px] bg-teal-600 rounded-full font-bold">0</span>
+        </button>
+        <button onclick="switchTab('banksoal')" id="tab-banksoal" class="tab-btn px-3.5 py-2 text-xs sm:text-sm font-semibold text-teal-100 hover:text-white flex items-center gap-1.5 rounded-t-lg">
+          <i data-lucide="book-open" class="w-4 h-4"></i>
+          <span>Bank Soal (10-12)</span>
+          <span id="badge-total-soal" class="px-1.5 py-0.2 text-[10px] bg-emerald-600 rounded-full font-bold">0</span>
+        </button>
+        <!-- Tab Admin disembunyikan sampai admin berhasil login dengan gembok rahasia -->
+        <button onclick="switchTab('admin')" id="tab-admin" class="tab-btn hidden px-3.5 py-2 text-xs sm:text-sm font-semibold text-amber-200 hover:text-amber-100 flex items-center gap-1.5 rounded-t-lg">
+          <i data-lucide="settings" class="w-4 h-4"></i>
+          <span>Panel Admin</span>
+          <span id="badge-admin-status" class="w-2 h-2 rounded-full bg-emerald-400"></span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ==================== MAIN CONTENT WRAPPER ==================== -->
+  <main class="flex-grow max-w-4xl w-full mx-auto px-3.5 sm:px-6 py-5 sm:py-7">
+
+    <!-- Loading Screen -->
+    <div id="loading-spinner" class="py-16 text-center">
+      <div class="inline-block p-4 rounded-full bg-teal-50 text-teal-600 animate-spin mb-3">
+        <i data-lucide="loader-2" class="w-8 h-8"></i>
+      </div>
+      <h3 class="text-sm sm:text-base font-semibold text-slate-700">Menghubungkan ke Database Google Sheets...</h3>
+      <p class="text-xs text-slate-400 mt-1">Mengambil data bank soal, jadwal ulangan, dan master kelas</p>
+    </div>
+
+    <!-- ======================================================================
+         TAB 1: FORM PENJADWALAN UH (GOOGLE FORM STYLE)
+         ====================================================================== -->
+    <section id="view-jadwal" class="hidden fade-in space-y-4 sm:space-y-5">
+      
+      <!-- FORM HEADER CARD (KHAS GOOGLE FORM) -->
+      <div class="gform-header-card p-5 sm:p-7">
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <h2 class="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">
+              Formulir Penjadwalan Ulangan Harian (UH) Kimia
+            </h2>
+            <p class="text-xs sm:text-sm text-teal-700 font-bold mt-1 flex items-center gap-1.5">
+              <i data-lucide="school" class="w-4 h-4"></i>
+              <span>SMA Progresif Bumi Shalawat &bull; Tahun Ajaran 2026/2027</span>
+            </p>
+            <p class="text-xs sm:text-sm text-slate-600 mt-2 leading-relaxed">
+              Silakan lengkapi formulir di bawah ini untuk mendaftarkan jadwal UH CBT kelas Anda. Jadwal antar kelas <strong>diperbolehkan bersamaan</strong> pada jam yang sama (CBT simultan) dan otomatis tampil di <strong>Kalender Rekap Sekolah</strong>.
+            </p>
+          </div>
+          <span class="hidden sm:inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 flex-shrink-0">
+            <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            Siap Digunakan
+          </span>
+        </div>
+        
+        <div class="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-rose-600 font-medium">
+          <span>* Menunjukkan pertanyaan yang wajib diisi</span>
+          <span class="text-slate-400 hidden sm:inline">Kurikulum Merdeka & Nasional</span>
+        </div>
+      </div>
+
+      <!-- FORM BODY DENGAN KARTU TANYA-JAWAB -->
+      <form id="form-jadwal" onsubmit="handleFormJadwalSubmit(event)" class="space-y-4">
+        
+        <!-- KARTU 1: NAMA GURU -->
+        <div class="gform-card p-5 sm:p-6">
+          <label for="input-nama-guru" class="block text-sm font-bold text-slate-800 mb-1">
+            1. Nama Guru Kimia Pengampu <span class="text-rose-600">*</span>
+          </label>
+          <p class="text-xs text-slate-500 mb-3">Tuliskan nama lengkap Anda beserta gelar pengampu</p>
+          <div class="relative">
+            <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+              <i data-lucide="user" class="w-4 h-4"></i>
+            </span>
+            <input type="text" id="input-nama-guru" required placeholder="Contoh: Dra. Siti Aminah, M.Pd" class="w-full pl-10 pr-3.5 py-3 bg-slate-50/70 focus:bg-white border border-slate-300 rounded-xl text-base sm:text-sm font-medium focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none transition">
+          </div>
+        </div>
+
+        <!-- KARTU 2: PILIHAN KELAS -->
+        <div class="gform-card p-5 sm:p-6">
+          <label for="select-kelas" class="block text-sm font-bold text-slate-800 mb-1">
+            2. Nama / Jenis Kelas <span class="text-rose-600">*</span>
+          </label>
+          <p class="text-xs text-slate-500 mb-3">Pilih kelas yang akan mengikuti ulangan harian</p>
+          <div class="relative">
+            <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+              <i data-lucide="graduation-cap" class="w-4 h-4"></i>
+            </span>
+            <select id="select-kelas" required onchange="handleKelasChange()" class="w-full pl-10 pr-3.5 py-3 bg-slate-50/70 focus:bg-white border border-slate-300 rounded-xl text-base sm:text-sm font-medium focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none transition cursor-pointer">
+              <option value="">-- Pilih Kelas --</option>
+              <!-- Dinamis terisi dari data Master Kelas -->
+            </select>
+          </div>
+          <p class="text-[11px] text-slate-400 mt-2">Daftar kelas di atas mencakup kelas reguler, tahfidz, bilingual, riset, dan dapat ditambah oleh admin.</p>
+        </div>
+
+        <!-- KARTU 3: TANGGAL ULANGAN -->
+        <div class="gform-card p-5 sm:p-6 space-y-3">
+          <label for="input-tanggal" class="block text-sm font-bold text-slate-800 mb-1">
+            3. Tanggal Pelaksanaan Ulangan <span class="text-rose-600">*</span>
+          </label>
+          <p class="text-xs text-slate-500 mb-2">Pilih tanggal ulangan (Sistem otomatis mendeteksi jadwal jam sekolah)</p>
+          
+          <div class="relative">
+            <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+              <i data-lucide="calendar-days" class="w-4 h-4"></i>
+            </span>
+            <input type="date" id="input-tanggal" required onchange="handleTanggalChange()" class="w-full pl-10 pr-3.5 py-3 bg-slate-50/70 focus:bg-white border border-slate-300 rounded-xl text-base sm:text-sm font-medium focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none transition">
+          </div>
+
+          <!-- Info Box Hari & Ketentuan Jam Sekolah -->
+          <div id="badge-info-hari" class="p-3 rounded-xl bg-slate-100 text-slate-700 text-xs font-semibold flex items-center gap-2 border border-slate-200">
+            <i data-lucide="info" class="w-4 h-4 text-slate-500 flex-shrink-0"></i>
+            <span id="text-info-hari">Pilih tanggal di atas untuk melihat jam sekolah</span>
+          </div>
+        </div>
+
+        <!-- KARTU 4: ALOKASI JAM PEMBELAJARAN (JP) -->
+        <div class="gform-card p-5 sm:p-6 space-y-4">
+          <div class="flex items-center justify-between">
+            <div>
+              <label class="block text-sm font-bold text-slate-800 mb-1">
+                4. Jam Pembelajaran (JP) Ke- <span class="text-rose-600">*</span>
+              </label>
+              <p class="text-xs text-slate-500">Pilih jam ke berapa ulangan berlangsung</p>
+            </div>
+            <span id="badge-durasi-hari" class="text-xs font-bold text-teal-800 bg-teal-100 px-2.5 py-1 rounded-lg">
+              Maks. 8 JP
+            </span>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+            <div>
+              <label for="select-jp-mulai" class="block text-xs font-semibold text-slate-700 mb-1">Mulai dari Jam Pelajaran Ke- <span class="text-rose-600">*</span></label>
+              <select id="select-jp-mulai" required onchange="calculateTimePreview()" class="w-full py-2.5 px-3 bg-slate-50/70 border border-slate-300 rounded-xl text-base sm:text-sm font-medium focus:ring-2 focus:ring-teal-500 outline-none">
+                <!-- Dinamis terisi JP 1-8 atau 1-4 -->
+              </select>
+            </div>
+
+            <div>
+              <label for="select-jp-selesai" class="block text-xs font-semibold text-slate-700 mb-1">Sampai dengan Jam Pelajaran Ke-</label>
+              <select id="select-jp-selesai" onchange="calculateTimePreview()" class="w-full py-2.5 px-3 bg-slate-50/70 border border-slate-300 rounded-xl text-base sm:text-sm font-medium focus:ring-2 focus:ring-teal-500 outline-none">
+                <!-- Dinamis terisi JP 1-8 atau 1-4 -->
+              </select>
+            </div>
+          </div>
+
+          <!-- Preview Realtime Jam WIB -->
+          <div id="preview-jam-box" class="p-3.5 rounded-xl bg-teal-50 border border-teal-200 text-teal-900 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div class="flex items-center space-x-2">
+              <i data-lucide="bell-ring" class="w-4 h-4 text-teal-600 flex-shrink-0"></i>
+              <div>
+                <span class="font-bold">Estimasi Jam Sekolah: </span>
+                <span id="text-rentang-jam" class="font-bold text-teal-950">-</span>
+              </div>
+            </div>
+            <span id="text-durasi-menit" class="self-start sm:self-center text-xs font-bold px-2.5 py-1 bg-teal-200/80 rounded-md text-teal-900">-</span>
+          </div>
+        </div>
+
+        <!-- KARTU 5: MATERI POKOK & STATUS BANK SOAL -->
+        <div class="gform-card p-5 sm:p-6 space-y-3">
+          <label for="select-materi" class="block text-sm font-bold text-slate-800 mb-1">
+            5. Materi Pokok Kimia yang Diujikan <span class="text-rose-600">*</span>
+          </label>
+          <p class="text-xs text-slate-500 mb-2">Pilih materi dari Bank Soal Kimia (otomatis memeriksa kesiapan naskah CBT)</p>
+
+          <div class="relative">
+            <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+              <i data-lucide="book-open" class="w-4 h-4"></i>
+            </span>
+            <select id="select-materi" required onchange="handleMateriSelectChange()" class="w-full pl-10 pr-3.5 py-3 bg-slate-50/70 focus:bg-white border border-slate-300 rounded-xl text-base sm:text-sm font-medium focus:ring-2 focus:ring-teal-500 outline-none transition cursor-pointer">
+              <option value="">-- Pilih Materi dari Bank Soal --</option>
+              <!-- Dinamis terisi -->
+              <option value="CUSTOM">+ Ketik Materi Kustom / Tambahan Lainnya...</option>
+            </select>
+          </div>
+
+          <!-- Input Kustom jika materi tidak ada di dropdown -->
+          <div id="wrapper-materi-custom" class="hidden mt-2">
+            <input type="text" id="input-materi-custom" placeholder="Tuliskan nama materi khusus..." class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-base sm:text-sm font-medium focus:ring-2 focus:ring-teal-500 outline-none">
+          </div>
+
+          <!-- Status Ketersediaan Soal Box (Live Feedback) -->
+          <div id="box-status-soal" class="mt-3 p-4 rounded-xl border transition-all duration-200 hidden">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div class="flex items-start space-x-3">
+                <div id="icon-status-soal" class="mt-0.5 flex-shrink-0"></div>
+                <div>
+                  <div class="text-xs sm:text-sm font-bold" id="title-status-soal">Status Bank Soal: -</div>
+                  <div class="text-xs mt-0.5" id="desc-status-soal">Keterangan ketersediaan soal</div>
+                </div>
+              </div>
+              <div class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-amber-50 text-amber-900 border border-amber-200 flex items-center gap-1.5 self-start sm:self-center flex-shrink-0">
+                <i data-lucide="shield-alert" class="w-3.5 h-3.5 text-amber-600"></i>
+                <span>Hubungi TQA untuk mengakses soal</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- KARTU 6: CATATAN TAMBAHAN (OPSIONAL) -->
+        <div class="gform-card p-5 sm:p-6">
+          <label for="input-catatan" class="block text-sm font-bold text-slate-800 mb-1">
+            6. Catatan Tambahan (Opsional)
+          </label>
+          <p class="text-xs text-slate-500 mb-3">Informasi tambahan untuk siswa/pengawas (contoh: membawa kalkulator, tabel periodik, dsb)</p>
+          <textarea id="input-catatan" rows="2" placeholder="Tulis catatan jika ada..." class="w-full px-3.5 py-2.5 bg-slate-50/70 focus:bg-white border border-slate-300 rounded-xl text-base sm:text-sm font-medium focus:ring-2 focus:ring-teal-500 outline-none transition"></textarea>
+        </div>
+
+        <!-- TOMBOL AKSI KIRIM JADWAL (GOOGLE FORM SUBMIT) -->
+        <div class="pt-2 flex flex-col sm:flex-row items-center justify-between gap-3">
+          <button type="submit" id="btn-submit-jadwal" class="w-full sm:w-auto px-8 py-3.5 bg-teal-600 hover:bg-teal-700 active:bg-teal-800 text-white font-bold rounded-xl shadow-md hover:shadow-lg transition flex items-center justify-center gap-2 text-sm sm:text-base">
+            <i data-lucide="send" class="w-4 h-4"></i>
+            <span>Kirim Jadwal (Submit)</span>
+          </button>
+          
+          <button type="button" onclick="resetFormJadwal()" class="text-xs font-semibold text-slate-500 hover:text-slate-800 py-2 px-3 transition">
+            Kosongkan Formulir
+          </button>
+        </div>
+
+      </form>
+    </section>
+
+    <!-- ======================================================================
+         TAB 2: KALENDER REKAP (CROSS-DEVICE: DESKTOP & MOBILE FRIENDLY)
+         ====================================================================== -->
+    <section id="view-kalender" class="hidden fade-in space-y-4">
+      
+      <!-- View Switcher & Filter Bar (Cross Device) -->
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-4 space-y-3">
+        
+        <!-- Toggle Tampilan: Bulanan vs Daftar Agenda HP -->
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+          <div>
+            <h3 class="text-base font-bold text-slate-800 flex items-center gap-2">
+              <i data-lucide="calendar" class="w-5 h-5 text-teal-600"></i>
+              Rekap Jadwal Ulangan Harian Kimia
+            </h3>
+            <p class="text-xs text-slate-500">Semua jadwal ulangan yang didaftarkan oleh guru kimia sekolah</p>
+          </div>
+
+          <!-- Tombol Switch View Cepat (Bagus di HP) -->
+          <div class="inline-flex rounded-xl bg-slate-100 p-1 self-start sm:self-auto border border-slate-200">
+            <button onclick="setCalendarMode('dayGridMonth')" id="btn-view-month" class="px-3 py-1.5 rounded-lg text-xs font-bold transition bg-white text-teal-800 shadow-xs flex items-center gap-1.5">
+              <i data-lucide="grid" class="w-3.5 h-3.5"></i>
+              <span>Kalender</span>
+            </button>
+            <button onclick="setCalendarMode('listMonth')" id="btn-view-list" class="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:text-slate-900 transition flex items-center gap-1.5">
+              <i data-lucide="list" class="w-3.5 h-3.5"></i>
+              <span>Daftar Agenda (HP)</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Filter Bar -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div>
+            <label class="text-[11px] font-bold uppercase text-slate-400 block mb-1">Filter Jenjang</label>
+            <select id="filter-cal-tingkat" onchange="renderCalendarEvents()" class="w-full text-xs py-2 px-3 bg-slate-50 border border-slate-300 rounded-lg outline-none font-medium text-slate-700 focus:ring-1 focus:ring-teal-500">
+              <option value="ALL">Semua Tingkat</option>
+              <option value="10">Kelas 10 (Fase E)</option>
+              <option value="11">Kelas 11 (Fase F)</option>
+              <option value="12">Kelas 12 (Fase F)</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="text-[11px] font-bold uppercase text-slate-400 block mb-1">Filter Kelas</label>
+            <select id="filter-cal-kelas" onchange="renderCalendarEvents()" class="w-full text-xs py-2 px-3 bg-slate-50 border border-slate-300 rounded-lg outline-none font-medium text-slate-700 focus:ring-1 focus:ring-teal-500">
+              <option value="ALL">Semua Kelas</option>
+              <!-- Dinamis terisi -->
+            </select>
+          </div>
+
+          <div>
+            <label class="text-[11px] font-bold uppercase text-slate-400 block mb-1">Filter Guru</label>
+            <select id="filter-cal-guru" onchange="renderCalendarEvents()" class="w-full text-xs py-2 px-3 bg-slate-50 border border-slate-300 rounded-lg outline-none font-medium text-slate-700 focus:ring-1 focus:ring-teal-500">
+              <option value="ALL">Semua Guru Kimia</option>
+              <!-- Dinamis terisi -->
+            </select>
+          </div>
+        </div>
+
+        <!-- Legend Warna -->
+        <div class="flex flex-wrap items-center gap-3 pt-2 text-xs">
+          <span class="text-slate-400 font-semibold">Tingkat:</span>
+          <div class="flex items-center gap-1.5">
+            <span class="w-2.5 h-2.5 rounded-full bg-teal-600 inline-block"></span>
+            <span class="text-slate-600 font-medium">Kelas 10</span>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <span class="w-2.5 h-2.5 rounded-full bg-blue-600 inline-block"></span>
+            <span class="text-slate-600 font-medium">Kelas 11</span>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <span class="w-2.5 h-2.5 rounded-full bg-purple-600 inline-block"></span>
+            <span class="text-slate-600 font-medium">Kelas 12</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Container Kalender -->
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-3 sm:p-5">
+        <div id="calendar" class="min-h-[550px]"></div>
+      </div>
+
+    </section>
+
+    <!-- ======================================================================
+         TAB 3: BANK SOAL KIMIA (KELAS 10 - 12)
+         ====================================================================== -->
+    <section id="view-banksoal" class="hidden fade-in space-y-4 sm:space-y-6">
+      
+      <!-- Top Banner & Filters -->
+      <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 p-5 sm:p-6">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+          <div>
+            <h2 class="text-lg sm:text-xl font-bold text-slate-800 flex items-center gap-2">
+              <i data-lucide="layers" class="w-5 h-5 text-teal-600"></i>
+              Katalog Bank Soal Kimia (Kelas 10 – 12)
+            </h2>
+            <p class="text-xs text-slate-500 mt-0.5">Cek ketersediaan butir soal sebelum menjadwalkan UH CBT</p>
+          </div>
+          
+          <div class="flex items-center gap-2">
+            <span class="text-xs font-semibold px-3 py-1 bg-emerald-50 text-emerald-700 rounded-lg border border-emerald-200 flex items-center gap-1">
+              <i data-lucide="check-circle" class="w-3.5 h-3.5 text-emerald-600"></i>
+              <span id="stat-soal-tersedia">0 Siap Uji</span>
+            </span>
+            <span class="text-xs font-semibold px-3 py-1 bg-amber-50 text-amber-700 rounded-lg border border-amber-200 flex items-center gap-1">
+              <i data-lucide="clock" class="w-3.5 h-3.5 text-amber-600"></i>
+              <span id="stat-soal-belum">0 Proses</span>
+            </span>
+          </div>
+        </div>
+
+        <!-- Filter Bar -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 mt-4">
+          <div>
+            <label class="text-[11px] font-bold uppercase text-slate-400 block mb-1">Cari Materi</label>
+            <div class="relative">
+              <span class="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-slate-400">
+                <i data-lucide="search" class="w-3.5 h-3.5"></i>
+              </span>
+              <input type="text" id="filter-bs-search" oninput="renderBankSoalCards()" placeholder="Ketik topik..." class="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs outline-none focus:ring-1 focus:ring-teal-500">
+            </div>
+          </div>
+
+          <div>
+            <label class="text-[11px] font-bold uppercase text-slate-400 block mb-1">Tingkat Kelas</label>
+            <select id="filter-bs-tingkat" onchange="renderBankSoalCards()" class="w-full py-2 px-3 bg-slate-50 border border-slate-300 rounded-lg text-xs font-medium text-slate-700 outline-none focus:ring-1 focus:ring-teal-500">
+              <option value="ALL">Semua Kelas (10-12)</option>
+              <option value="10">Kelas 10 (Fase E)</option>
+              <option value="11">Kelas 11 (Fase F)</option>
+              <option value="12">Kelas 12 (Fase F)</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="text-[11px] font-bold uppercase text-slate-400 block mb-1">Semester</label>
+            <select id="filter-bs-semester" onchange="renderBankSoalCards()" class="w-full py-2 px-3 bg-slate-50 border border-slate-300 rounded-lg text-xs font-medium text-slate-700 outline-none focus:ring-1 focus:ring-teal-500">
+              <option value="ALL">Semua Semester</option>
+              <option value="Ganjil">Semester Ganjil</option>
+              <option value="Genap">Semester Genap</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="text-[11px] font-bold uppercase text-slate-400 block mb-1">Status Soal</label>
+            <select id="filter-bs-status" onchange="renderBankSoalCards()" class="w-full py-2 px-3 bg-slate-50 border border-slate-300 rounded-lg text-xs font-medium text-slate-700 outline-none focus:ring-1 focus:ring-teal-500">
+              <option value="ALL">Semua Status</option>
+              <option value="Tersedia">Hanya Tersedia</option>
+              <option value="Belum Tersedia">Belum Tersedia</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Grid Cards Bank Soal (Cross Device: 1 col on mobile, 2 col on tablet, 3 col on desktop) -->
+      <div id="grid-bank-soal" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <!-- Render dinamis via JS -->
+      </div>
+
+    </section>
+
+    <!-- ======================================================================
+         TAB 4: PANEL ADMIN (PASSWORD PROTECTED)
+         ====================================================================== -->
+    <section id="view-admin" class="hidden fade-in space-y-5">
+
+      <!-- Admin Header -->
+      <div class="bg-gradient-to-r from-slate-900 to-slate-800 text-white rounded-2xl p-5 sm:p-6 shadow-md flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="p-1.5 bg-amber-500/20 text-amber-400 rounded-lg border border-amber-500/30">
+              <i data-lucide="shield-check" class="w-5 h-5"></i>
+            </span>
+            <h2 class="text-base sm:text-lg font-bold">Panel Administrasi & Pengaturan</h2>
+          </div>
+          <p class="text-xs text-slate-400 mt-1">Kelola master kelas bebas, bank soal kimia, dan rekap jadwal sekolah</p>
+        </div>
+
+        <div class="flex items-center gap-2 w-full sm:w-auto">
+          <button onclick="bukaModalKoneksi()" class="flex-1 sm:flex-none px-3 py-2 bg-teal-800/80 hover:bg-teal-700 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition">
+            <i data-lucide="database" class="w-3.5 h-3.5 text-teal-200"></i>
+            <span>Koneksi Spreadsheet</span>
+          </button>
+          <button onclick="bukaModalGantiPin()" class="flex-1 sm:flex-none px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition">
+            <i data-lucide="key" class="w-3.5 h-3.5"></i>
+            <span>Ganti Password</span>
+          </button>
+          <button onclick="logoutAdmin()" class="flex-1 sm:flex-none px-3 py-2 bg-rose-600/80 hover:bg-rose-700 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition">
+            <i data-lucide="log-out" class="w-3.5 h-3.5"></i>
+            <span>Keluar Admin</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Admin Sub Tabs -->
+      <div class="flex space-x-1 sm:space-x-2 border-b border-slate-200 overflow-x-auto scrollbar-none">
+        <button onclick="switchAdminTab('kelola-soal')" id="admin-subtab-soal" class="px-3 sm:px-4 py-2 text-xs sm:text-sm font-bold text-teal-700 border-b-2 border-teal-600 flex items-center gap-1.5 whitespace-nowrap">
+          <i data-lucide="file-edit" class="w-4 h-4"></i>
+          <span>Kelola Bank Soal</span>
+        </button>
+        <button onclick="switchAdminTab('kelola-kelas')" id="admin-subtab-kelas" class="px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium text-slate-500 hover:text-slate-800 flex items-center gap-1.5 whitespace-nowrap">
+          <i data-lucide="layout-grid" class="w-4 h-4"></i>
+          <span>Kelola Jenis Kelas</span>
+        </button>
+        <button onclick="switchAdminTab('kelola-jadwal')" id="admin-subtab-jadwal" class="px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium text-slate-500 hover:text-slate-800 flex items-center gap-1.5 whitespace-nowrap">
+          <i data-lucide="table" class="w-4 h-4"></i>
+          <span>Daftar Seluruh Jadwal</span>
+        </button>
+      </div>
+
+      <!-- SUB-TAB ADMIN 1: KELOLA BANK SOAL -->
+      <div id="admin-view-soal" class="space-y-4">
+        <div class="flex justify-between items-center">
+          <h3 class="text-sm font-bold text-slate-800">Daftar Materi & Status Kesiapan Soal</h3>
+          <button onclick="bukaModalTambahMateri()" class="px-3.5 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm transition">
+            <i data-lucide="plus-circle" class="w-4 h-4"></i>
+            <span>Tambah Materi</span>
+          </button>
+        </div>
+
+        <div class="bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden">
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs">
+              <thead class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider">
+                <tr>
+                  <th class="py-3 px-4">Tingkat & Semester</th>
+                  <th class="py-3 px-4">Materi Pokok</th>
+                  <th class="py-3 px-4">Status Soal</th>
+                  <th class="py-3 px-4">Jumlah & Tipe</th>
+                  <th class="py-3 px-4">Link Soal CBT</th>
+                  <th class="py-3 px-4 text-center">Aksi Cepat</th>
+                </tr>
+              </thead>
+              <tbody id="table-body-admin-soal" class="divide-y divide-slate-100">
+                <!-- Dinamis terisi -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- SUB-TAB ADMIN 2: KELOLA JENIS KELAS (FLEKSIBEL) -->
+      <div id="admin-view-kelas" class="hidden space-y-4">
+        <div class="bg-teal-50 border border-teal-200 p-4 rounded-xl text-xs text-teal-800 flex items-start gap-2.5">
+          <i data-lucide="info" class="w-4 h-4 text-teal-600 mt-0.5 flex-shrink-0"></i>
+          <div>
+            <strong>Manajemen Jenis Kelas Bebas:</strong> Tambahkan kelas reguler, bilingual, riset, tahfidz, ataupun laboratorium CBT di sini agar langsung muncul pada formulir guru.
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
+          
+          <!-- Form Tambah Kelas Baru -->
+          <div class="lg:col-span-4 bg-white rounded-2xl shadow-sm border border-slate-200/80 p-5">
+            <h3 class="text-sm font-bold text-slate-800 mb-4 flex items-center gap-2">
+              <i data-lucide="plus-circle" class="w-4 h-4 text-teal-600"></i>
+              Tambah Jenis Kelas Baru
+            </h3>
+            
+            <form onsubmit="handleTambahKelasSubmit(event)" class="space-y-3.5">
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Nama / Kode Kelas <span class="text-rose-500">*</span></label>
+                <input type="text" id="input-kelas-nama" required placeholder="Contoh: X-Tahfidz 1 / XI-Unggulan" class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs outline-none focus:ring-2 focus:ring-teal-500">
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Tingkat Kelas <span class="text-rose-500">*</span></label>
+                <select id="input-kelas-tingkat" required class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs outline-none focus:ring-2 focus:ring-teal-500">
+                  <option value="10">Kelas 10 (Fase E)</option>
+                  <option value="11">Kelas 11 (Fase F)</option>
+                  <option value="12">Kelas 12 (Fase F)</option>
+                </select>
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Kategori / Jenis Kelas</label>
+                <input type="text" id="input-kelas-kategori" placeholder="Contoh: Reguler / Peminatan / Tahfidz" class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs outline-none focus:ring-2 focus:ring-teal-500">
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Keterangan / Ruangan</label>
+                <input type="text" id="input-kelas-keterangan" placeholder="Contoh: Lab Komputer 2" class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs outline-none focus:ring-2 focus:ring-teal-500">
+              </div>
+
+              <button type="submit" id="btn-tambah-kelas" class="w-full py-2.5 px-4 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-lg text-xs transition flex items-center justify-center gap-1.5">
+                <i data-lucide="plus" class="w-4 h-4"></i>
+                <span>Simpan Kelas</span>
+              </button>
+            </form>
+          </div>
+
+          <!-- Tabel List Kelas -->
+          <div class="lg:col-span-8 bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden">
+            <div class="p-4 border-b border-slate-100 flex justify-between items-center">
+              <h3 class="text-sm font-bold text-slate-800">Daftar Kelas Aktif (<span id="count-kelas">0</span>)</h3>
+            </div>
+            <div class="overflow-x-auto max-h-[500px]">
+              <table class="w-full text-left text-xs">
+                <thead class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase">
+                  <tr>
+                    <th class="py-2.5 px-4">Nama Kelas</th>
+                    <th class="py-2.5 px-4">Tingkat</th>
+                    <th class="py-2.5 px-4">Kategori Jenis</th>
+                    <th class="py-2.5 px-4">Keterangan</th>
+                    <th class="py-2.5 px-4 text-center">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody id="table-body-admin-kelas" class="divide-y divide-slate-100">
+                  <!-- Dinamis terisi -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- SUB-TAB ADMIN 3: REKAP JADWAL & PRINT -->
+      <div id="admin-view-jadwal" class="hidden space-y-4">
+        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+          <h3 class="text-sm font-bold text-slate-800">Semua Jadwal Ulangan Harian Terdaftar</h3>
+          <div class="flex items-center gap-2">
+            <button onclick="cetakRekapJadwal()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition">
+              <i data-lucide="printer" class="w-3.5 h-3.5"></i>
+              <span>Cetak / PDF Rekap</span>
+            </button>
+          </div>
+        </div>
+
+        <div id="print-section" class="bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden">
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs">
+              <thead class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase">
+                <tr>
+                  <th class="py-3 px-4">Tanggal & Jam</th>
+                  <th class="py-3 px-4">Kelas</th>
+                  <th class="py-3 px-4">Guru Pengampu</th>
+                  <th class="py-3 px-4">Materi Ujian</th>
+                  <th class="py-3 px-4">Kesiapan Soal</th>
+                  <th class="py-3 px-4 no-print text-center">Aksi</th>
+                </tr>
+              </thead>
+              <tbody id="table-body-admin-jadwal" class="divide-y divide-slate-100">
+                <!-- Dinamis terisi -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- ==================== MODALS ==================== -->
+
+  <!-- 1. Modal Login Password Admin -->
+  <div id="modal-admin-login" class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 hidden">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 space-y-4 fade-in">
+      <div class="text-center">
+        <div class="w-12 h-12 rounded-full bg-teal-50 text-teal-600 mx-auto flex items-center justify-center mb-2">
+          <i data-lucide="lock" class="w-6 h-6"></i>
+        </div>
+        <h3 class="text-base font-bold text-slate-800">Autentikasi Administrator</h3>
+        <p class="text-xs text-slate-500 mt-0.5">Masukkan Password untuk mengelola bank soal & kelas</p>
+      </div>
+
+      <div>
+        <label class="block text-xs font-semibold text-slate-700 mb-1">Password Administrator</label>
+        <input type="password" id="input-admin-pin" placeholder="••••••••••••" autocomplete="current-password" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-center text-base font-semibold outline-none focus:ring-2 focus:ring-teal-500">
+      </div>
+
+      <div class="flex gap-2">
+        <button onclick="toggleAdminModal(false)" class="w-1/2 py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-xs transition">
+          Batal
+        </button>
+        <button onclick="submitAdminPin()" id="btn-login-pin" class="w-1/2 py-2.5 px-4 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-xl text-xs transition">
+          Verifikasi Akses
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. Modal Ganti Password Admin -->
+  <div id="modal-ganti-pin" class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 hidden">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 space-y-4 fade-in">
+      <div class="text-center">
+        <h3 class="text-base font-bold text-slate-800">Perbarui Password Admin</h3>
+        <p class="text-xs text-slate-500 mt-0.5">Minimal 4 karakter</p>
+      </div>
+
+      <div class="space-y-3">
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1">Password Baru</label>
+          <input type="password" id="input-pin-baru" placeholder="Masukkan password baru" class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs outline-none focus:ring-2 focus:ring-teal-500">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-700 mb-1">Konfirmasi Password Baru</label>
+          <input type="password" id="input-pin-konfirmasi" placeholder="Ulangi password baru" class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs outline-none focus:ring-2 focus:ring-teal-500">
+        </div>
+      </div>
+
+      <div class="flex gap-2">
+        <button onclick="tutupModalGantiPin()" class="w-1/2 py-2 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-lg text-xs transition">
+          Batal
+        </button>
+        <button onclick="submitGantiPin()" class="w-1/2 py-2 px-3 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-lg text-xs transition">
+          Simpan
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. Modal Detail Jadwal Event Kalender -->
+  <div id="modal-detail-jadwal" class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 hidden">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-4 fade-in">
+      <div class="flex items-start justify-between pb-3 border-b border-slate-100">
+        <div class="flex items-center space-x-2.5">
+          <div id="modal-detail-badge-tingkat" class="w-3 h-10 rounded-full bg-teal-600"></div>
+          <div>
+            <h3 id="modal-detail-kelas" class="text-lg font-bold text-slate-800">Kelas X-1</h3>
+            <p id="modal-detail-guru" class="text-xs text-slate-500">Guru: -</p>
+          </div>
+        </div>
+        <button onclick="tutupModalDetailJadwal()" class="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div class="space-y-3 text-xs">
+        <div class="p-3 rounded-xl bg-slate-50 border border-slate-200/80 space-y-2">
+          <div class="flex justify-between">
+            <span class="text-slate-500">Tanggal:</span>
+            <span id="modal-detail-tanggal" class="font-bold text-slate-800">-</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-slate-500">Alokasi JP:</span>
+            <span id="modal-detail-jp" class="font-bold text-teal-700 bg-teal-50 px-2 py-0.5 rounded">-</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-slate-500">Waktu Pelaksanaan:</span>
+            <span id="modal-detail-jam" class="font-bold text-slate-800">-</span>
+          </div>
+        </div>
+
+        <div>
+          <label class="text-[11px] font-bold uppercase text-slate-400 block mb-1">Materi yang Diujikan</label>
+          <div id="modal-detail-materi" class="p-3 bg-teal-50/70 border border-teal-200/80 rounded-xl font-semibold text-teal-950 text-sm">
+            -
+          </div>
+        </div>
+
+        <div class="flex justify-between items-center py-1">
+          <span class="text-slate-500">Kesiapan Naskah Soal:</span>
+          <span id="modal-detail-status-soal" class="font-bold px-2 py-0.5 rounded text-[11px]">-</span>
+        </div>
+
+        <div id="modal-detail-catatan-wrapper">
+          <label class="text-[11px] font-bold uppercase text-slate-400 block mb-1">Catatan Tambahan</label>
+          <p id="modal-detail-catatan" class="text-slate-600 italic bg-slate-50 p-2 rounded-lg border border-slate-200/60">-</p>
+        </div>
+      </div>
+
+      <div class="pt-3 border-t border-slate-100 flex justify-between items-center">
+        <button id="modal-btn-hapus-jadwal" onclick="handleHapusJadwalModal()" class="hidden text-xs font-semibold text-rose-600 hover:text-rose-800 flex items-center gap-1">
+          <i data-lucide="trash-2" class="w-4 h-4"></i>
+          <span>Hapus Jadwal</span>
+        </button>
+        <button onclick="tutupModalDetailJadwal()" class="ml-auto py-2 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-xs transition">
+          Tutup
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. Modal Tambah / Edit Materi Bank Soal (Admin) -->
+  <div id="modal-materi-banksoal" class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 hidden">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 space-y-4 fade-in max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+        <h3 id="modal-materi-title" class="text-base font-bold text-slate-800">Tambah Materi Bank Soal</h3>
+        <button onclick="tutupModalMateri()" class="p-1 rounded-lg text-slate-400 hover:text-slate-600">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <form id="form-modal-materi" onsubmit="handleMateriSubmit(event)" class="space-y-4 text-xs">
+        <input type="hidden" id="modal-materi-id">
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">Tingkat Kelas <span class="text-rose-500">*</span></label>
+            <select id="modal-materi-tingkat" required class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-teal-500">
+              <option value="10">Kelas 10 (Fase E)</option>
+              <option value="11">Kelas 11 (Fase F)</option>
+              <option value="12">Kelas 12 (Fase F)</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">Semester <span class="text-rose-500">*</span></label>
+            <select id="modal-materi-semester" required class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-teal-500">
+              <option value="Ganjil">Semester Ganjil</option>
+              <option value="Genap">Semester Genap</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label class="block font-semibold text-slate-700 mb-1">Materi Pokok Kimia <span class="text-rose-500">*</span></label>
+          <input type="text" id="modal-materi-nama" required placeholder="Contoh: Termokimia & Hukum Hess" class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-teal-500">
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">Status Kesiapan Soal <span class="text-rose-500">*</span></label>
+            <select id="modal-materi-status" required class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-teal-500 font-bold">
+              <option value="Tersedia" class="text-emerald-700 font-bold">Tersedia (Siap Diujikan)</option>
+              <option value="Belum Tersedia" class="text-amber-700 font-bold">Belum Tersedia (Proses)</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">Jumlah Butir Soal</label>
+            <input type="number" id="modal-materi-jumlah" min="0" value="25" class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-teal-500">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">Tipe Soal</label>
+            <input type="text" id="modal-materi-tipe" value="CBT Pilihan Ganda" placeholder="Contoh: CBT PG / Uraian" class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-teal-500">
+          </div>
+
+          <div>
+            <label class="block font-semibold text-slate-700 mb-1">Kunci Jawaban</label>
+            <select id="modal-materi-kunci" class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-teal-500">
+              <option value="Ada">Ada (Lengkap)</option>
+              <option value="Belum">Belum Ada</option>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <label class="block font-semibold text-slate-700 mb-1">Link Soal CBT / Google Form</label>
+          <input type="url" id="modal-materi-link" placeholder="https://docs.google.com/forms/d/..." class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-teal-500">
+        </div>
+
+        <div>
+          <label class="block font-semibold text-slate-700 mb-1">Keterangan Tambahan</label>
+          <input type="text" id="modal-materi-ket" placeholder="Contoh: Paket A dan B siap pakai" class="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-teal-500">
+        </div>
+
+        <div class="pt-3 border-t border-slate-100 flex gap-2 justify-end">
+          <button type="button" onclick="tutupModalMateri()" class="py-2 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-lg transition">
+            Batal
+          </button>
+          <button type="submit" id="btn-submit-modal-materi" class="py-2 px-4 bg-teal-600 hover:bg-teal-700 text-white font-bold rounded-lg transition">
+            Simpan Data Materi
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Footer Ringkas -->
+  <footer class="mt-8 py-5 text-center text-xs text-slate-500 border-t border-slate-200 bg-white">
+    <div class="max-w-4xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
+      <p>SMA Progresif Bumi Shalawat &copy; 2026/2027 &bull; SIM-UH Kimia CBT</p>
+      <div class="flex items-center gap-3">
+        <button onclick="bukaModalKoneksi()" title="Konfigurasi URL Google Apps Script" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold border border-slate-300 transition cursor-pointer">
+          <i data-lucide="database" class="w-3.5 h-3.5 text-teal-600"></i>
+          <span>Koneksi Google Sheets</span>
+        </button>
+        <span>GitHub Pages Ready</span>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Include Scripts Logic -->
+  <?!= include('Scripts'); ?>
+</body>
+</html>

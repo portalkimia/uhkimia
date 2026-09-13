@@ -1,0 +1,1923 @@
+<script>
+/**
+ * ============================================================================
+ * LOGIKA FRONTEND SIM-UH KIMIA & BANK SOAL
+ * ============================================================================
+ */
+
+// ============================================================================
+// KONFIGURASI BACKEND API (GOOGLE APPS SCRIPT)
+// ============================================================================
+// URL Web App Google Apps Script Live SMA Progresif Bumi Shalawat
+const DEFAULT_GAS_URL = "https://script.google.com/macros/s/AKfycby6fhoVVqfMAS4UbI2qqaAQwx3RtZUn7KpmFiB2r4p6apjIjr1InOUI8SVdKkSiKnI3/exec"; 
+let savedGasUrl = localStorage.getItem("SIM_UH_GAS_URL");
+let GAS_API_URL = (savedGasUrl && savedGasUrl.trim() !== "") ? savedGasUrl : DEFAULT_GAS_URL;
+
+// State Global Aplikasi
+let appData = {
+  kelas: [],
+  bankSoal: [],
+  jadwal: [],
+  config: { namaSekolah: "SMA Progresif Bumi Shalawat", tahunAjaran: "2026/2027" }
+};
+
+let currentTab = 'jadwal';
+let currentAdminSubTab = 'kelola-soal';
+let isAdminLoggedIn = false;
+let verifiedAdminPin = '';
+let calendar = null;
+let currentActiveEventData = null;
+
+// Template Slot Waktu Sesuai Aturan Jam Sekolah
+const TIME_CONFIG = {
+  // Senin s/d Kamis: 8 JP, Istirahat 09.40-10.00 (20m), JP 8 = 30m
+  regular: {
+    maxJp: 8,
+    slots: {
+      1: { start: "07:00", end: "07:40", dur: 40 },
+      2: { start: "07:40", end: "08:20", dur: 40 },
+      3: { start: "08:20", end: "09:00", dur: 40 },
+      4: { start: "09:00", end: "09:40", dur: 40 },
+      // Istirahat 20 menit (09:40 - 10:00)
+      5: { start: "10:00", end: "10:40", dur: 40 },
+      6: { start: "10:40", end: "11:20", dur: 40 },
+      7: { start: "11:20", end: "12:00", dur: 40 },
+      8: { start: "12:00", end: "12:30", dur: 30 }
+    }
+  },
+  // Jumat: 4 JP (07:00 - 09:40)
+  jumat: {
+    maxJp: 4,
+    slots: {
+      1: { start: "07:00", end: "07:40", dur: 40 },
+      2: { start: "07:40", end: "08:20", dur: 40 },
+      3: { start: "08:20", end: "09:00", dur: 40 },
+      4: { start: "09:00", end: "09:40", dur: 40 }
+    }
+  },
+  // Sabtu: 4 JP Mulai 07:40 s/d 10:20 (@40 menit)
+  sabtu: {
+    maxJp: 4,
+    slots: {
+      1: { start: "07:40", end: "08:20", dur: 40 },
+      2: { start: "08:20", end: "09:00", dur: 40 },
+      3: { start: "09:00", end: "09:40", dur: 40 },
+      4: { start: "09:40", end: "10:20", dur: 40 }
+    }
+  }
+};
+
+// Inisialisasi saat Halaman Dimuat
+document.addEventListener('DOMContentLoaded', () => {
+  lucide.createIcons();
+  startLiveClock();
+  initDefaultDate();
+  loadInitialData();
+});
+
+/**
+ * Jam Realtime Header
+ */
+function startLiveClock() {
+  const clockEl = document.getElementById('clock-display');
+  const update = () => {
+    const now = new Date();
+    const days = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+    
+    const dayName = days[now.getDay()];
+    const date = now.getDate();
+    const month = months[now.getMonth()];
+    const year = now.getFullYear();
+    const hh = String(now.getHours()).padStart(2, '0');
+    const mm = String(now.getMinutes()).padStart(2, '0');
+    const ss = String(now.getSeconds()).padStart(2, '0');
+    
+    clockEl.textContent = `${dayName}, ${date} ${month} ${year} | ${hh}:${mm}:${ss} WIB`;
+  };
+  update();
+  setInterval(update, 1000);
+}
+
+/**
+ * Set Default Tanggal ke Hari Ini (atau Besok jika hari Minggu)
+ */
+function initDefaultDate() {
+  const today = new Date();
+  // Jika hari Minggu (0), geser ke Senin
+  if (today.getDay() === 0) {
+    today.setDate(today.getDate() + 1);
+  }
+  const yyyy = today.getFullYear();
+  const mm = String(today.getMonth() + 1).padStart(2, '0');
+  const dd = String(today.getDate()).padStart(2, '0');
+  const dateStr = `${yyyy}-${mm}-${dd}`;
+  
+  const inputTgl = document.getElementById('input-tanggal');
+  if (inputTgl) {
+    inputTgl.value = dateStr;
+    handleTanggalChange();
+  }
+}
+
+/**
+ * Universal Request API Caller
+ * Mendukung GitHub Pages (fetch ke GAS Web App) & Google Apps Script native (google.script.run)
+ */
+async function requestApi(action, data = {}) {
+  // 1. Jika URL Web App Google Apps Script telah disetel (Mode GitHub Pages / Eksternal)
+  if (GAS_API_URL && GAS_API_URL.trim().startsWith("http")) {
+    const cleanUrl = GAS_API_URL.trim();
+    try {
+      // Mengirim POST request tanpa Content-Type kustom agar tidak memicu CORS preflight OPTIONS di browser
+      const payload = JSON.stringify({ action: action, data: data });
+      const res = await fetch(cleanUrl, {
+        method: "POST",
+        body: payload
+      });
+      const json = await res.json();
+      return json;
+    } catch (errPost) {
+      console.warn("POST ke GAS API gagal, mencoba fallback GET:", errPost);
+      try {
+        const url = new URL(cleanUrl);
+        url.searchParams.set("action", action);
+        url.searchParams.set("data", JSON.stringify(data));
+        const resGet = await fetch(url.toString());
+        return await resGet.json();
+      } catch (errGet) {
+        console.error("Gagal terhubung ke Google Apps Script API:", errGet);
+        throw new Error("Koneksi ke Google Sheets gagal: " + errGet.message);
+      }
+    }
+  }
+
+  // 2. Jika dijalankan di dalam container Google Apps Script
+  if (typeof google !== 'undefined' && google.script && google.script.run) {
+    return new Promise((resolve, reject) => {
+      const runner = google.script.run
+        .withSuccessHandler(resolve)
+        .withFailureHandler(reject);
+      if (action === "getInitData") runner.getAppInitData();
+      else if (action === "simpanJadwal") runner.simpanJadwal(data.formData || data);
+      else if (action === "hapusJadwal") runner.hapusJadwal(data.idJadwal || data.id, data.pin);
+      else if (action === "simpanMateri") runner.simpanMateriBankSoal(data.materiData || data, data.pin);
+      else if (action === "toggleStatusSoal") runner.toggleStatusSoal(data.idMateri || data.id, data.pin);
+      else if (action === "hapusMateri") runner.hapusMateri(data.idMateri || data.id, data.pin);
+      else if (action === "tambahKelas") runner.tambahKelas(data.kelasData || data, data.pin);
+      else if (action === "hapusKelas") runner.hapusKelas(data.idKelas || data.id, data.pin);
+      else if (action === "ubahPin") runner.ubahPinAdmin(data.oldPin, data.newPin);
+      else if (action === "verifikasiPin") runner.verifikasiAdmin(data.pin);
+      else reject(new Error("Aksi tidak dikenal"));
+    });
+  }
+
+  // 3. Mode Simulasi Offline / LocalStorage (jika belum konek GAS atau tanpa internet)
+  return handleOfflineSimulation(action, data);
+}
+
+/**
+ * Simulasi Offline jika tidak terhubung ke Google Sheets
+ */
+function handleOfflineSimulation(action, data) {
+  const saved = localStorage.getItem("SIM_UH_OFFLINE_STORE");
+  if (saved) {
+    try { appData = JSON.parse(saved); } catch(e){}
+  } else if (!appData.kelas || appData.kelas.length === 0) {
+    loadMockData();
+  }
+
+  if (action === "getInitData") {
+    return Promise.resolve(appData);
+  } else if (action === "simpanJadwal") {
+    const formData = data.formData || data;
+    const infoWaktu = calculateOfflineWaktu(formData.tanggal, formData.jpMulai, formData.jpSelesai || formData.jpMulai);
+    const newId = "JAD-" + Date.now();
+    const newEntry = {
+      id: newId,
+      timestamp: new Date().toISOString(),
+      namaGuru: formData.namaGuru,
+      namaKelas: formData.namaKelas,
+      tanggal: formData.tanggal,
+      hari: infoWaktu.hari,
+      jpMulai: formData.jpMulai,
+      jpSelesai: formData.jpSelesai || formData.jpMulai,
+      jamMulai: infoWaktu.jamMulai,
+      jamSelesai: infoWaktu.jamSelesai,
+      rentangWaktu: infoWaktu.rentangWaktu,
+      materi: formData.materi,
+      statusSoal: formData.statusSoal || "Tersedia",
+      tipeCbt: formData.tipeCbt || "CBT",
+      catatan: formData.catatan || "",
+      statusJadwal: "Aktif"
+    };
+    appData.jadwal.unshift(newEntry);
+    localStorage.setItem("SIM_UH_OFFLINE_STORE", JSON.stringify(appData));
+    return Promise.resolve({
+      success: true,
+      message: "Jadwal berhasil disimpan (Mode Offline/Simulasi)",
+      id: newId,
+      detail: infoWaktu
+    });
+  } else if (action === "verifikasiPin") {
+    const pin = String(data.pin).trim();
+    return Promise.resolve({ success: true, valid: (pin === "kimiasatuhati") });
+  } else if (action === "toggleStatusSoal") {
+    const id = data.idMateri || data.id;
+    const target = appData.bankSoal.find(b => b.id === id);
+    if (target) {
+      target.status = target.status === "Tersedia" ? "Belum Tersedia" : "Tersedia";
+      localStorage.setItem("SIM_UH_OFFLINE_STORE", JSON.stringify(appData));
+      return Promise.resolve({ success: true, newStatus: target.status, message: "Status soal diubah" });
+    }
+    return Promise.resolve({ success: false, message: "Materi tidak ditemukan" });
+  } else if (action === "simpanMateri") {
+    const m = data.materiData || data;
+    const idx = appData.bankSoal.findIndex(b => b.id === m.id);
+    if (idx >= 0) {
+      appData.bankSoal[idx] = { ...appData.bankSoal[idx], ...m };
+    } else {
+      m.id = "MAT-" + m.tingkat + "-" + Math.floor(Math.random() * 9000 + 1000);
+      appData.bankSoal.push(m);
+    }
+    localStorage.setItem("SIM_UH_OFFLINE_STORE", JSON.stringify(appData));
+    return Promise.resolve({ success: true, message: "Materi berhasil disimpan" });
+  } else if (action === "hapusMateri") {
+    const id = data.idMateri || data.id;
+    appData.bankSoal = appData.bankSoal.filter(b => b.id !== id);
+    localStorage.setItem("SIM_UH_OFFLINE_STORE", JSON.stringify(appData));
+    return Promise.resolve({ success: true, message: "Materi berhasil dihapus" });
+  } else if (action === "tambahKelas") {
+    const k = data.kelasData || data;
+    const newK = {
+      id: "KLS-" + Math.floor(Math.random() * 9000 + 1000),
+      nama: k.nama,
+      tingkat: k.tingkat,
+      kategori: k.kategori || "Reguler",
+      keterangan: k.keterangan || ""
+    };
+    appData.kelas.push(newK);
+    localStorage.setItem("SIM_UH_OFFLINE_STORE", JSON.stringify(appData));
+    return Promise.resolve({ success: true, message: "Kelas berhasil ditambahkan" });
+  } else if (action === "hapusKelas") {
+    const id = data.idKelas || data.id;
+    appData.kelas = appData.kelas.filter(k => k.id !== id);
+    localStorage.setItem("SIM_UH_OFFLINE_STORE", JSON.stringify(appData));
+    return Promise.resolve({ success: true, message: "Kelas berhasil dihapus" });
+  } else if (action === "hapusJadwal") {
+    const id = data.idJadwal || data.id;
+    appData.jadwal = appData.jadwal.filter(j => j.id !== id);
+    localStorage.setItem("SIM_UH_OFFLINE_STORE", JSON.stringify(appData));
+    return Promise.resolve({ success: true, message: "Jadwal berhasil dihapus" });
+  } else if (action === "ubahPin") {
+    return Promise.resolve({ success: true, message: "Password admin berhasil diperbarui" });
+  }
+  return Promise.resolve({ success: true });
+}
+
+function calculateOfflineWaktu(tanggalStr, jpMulai, jpSelesai) {
+  const date = new Date(tanggalStr + "T00:00:00");
+  const dayOfWeek = date.getDay();
+  const namaHari = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"][dayOfWeek];
+  const startJp = parseInt(jpMulai, 10);
+  const endJp = parseInt(jpSelesai || jpMulai, 10);
+  
+  let config = TIME_CONFIG.regular;
+  if (dayOfWeek === 5) config = TIME_CONFIG.jumat;
+  else if (dayOfWeek === 6) config = TIME_CONFIG.sabtu;
+
+  const jamMulai = (config.slots[startJp] && config.slots[startJp].start) || "07:00";
+  const jamSelesai = (config.slots[endJp] && config.slots[endJp].end) || "08:20";
+
+  return {
+    hari: namaHari,
+    jamMulai: jamMulai,
+    jamSelesai: jamSelesai,
+    rentangWaktu: jamMulai + " - " + jamSelesai + " WIB",
+    jpText: startJp === endJp ? ("JP " + startJp) : ("JP " + startJp + " - " + endJp)
+  };
+}
+
+/**
+ * Modal Pengaturan Koneksi Google Sheets (Apps Script API)
+ */
+function bukaModalKoneksi() {
+  Swal.fire({
+    title: 'Koneksi Google Spreadsheet',
+    html: `
+      <div class="text-left text-xs text-slate-600 space-y-2.5">
+        <p>Aplikasi web ini dapat di-host di <strong>GitHub Pages</strong> dan terhubung langsung ke Google Sheets sekolah via Web App Google Apps Script.</p>
+        <div class="p-2.5 bg-slate-100 rounded-lg text-[11px] border border-slate-200">
+          <strong>Langkah Singkat:</strong>
+          <ol class="list-decimal ml-4 mt-1 space-y-0.5">
+            <li>Buka <code>Kode.gs</code> di Google Spreadsheet &rarr; Klik <strong>Terapkan (Deploy)</strong> &rarr; <strong>Penerapan Baru</strong>.</li>
+            <li>Pilih jenis <strong>Aplikasi web</strong> (Akses: <em>Siapa saja</em>).</li>
+            <li>Salin URL Web App yang berakhiran <code>/exec</code> dan tempel di bawah ini.</li>
+          </ol>
+        </div>
+        <label class="block font-semibold text-slate-800 mt-2">URL Web App Google Apps Script:</label>
+        <input id="swal-input-gas-url" type="url" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-mono focus:ring-2 focus:ring-teal-500 outline-none" placeholder="https://script.google.com/macros/s/.../exec" value="${GAS_API_URL || ''}">
+      </div>
+    `,
+    showCancelButton: true,
+    showDenyButton: true,
+    confirmButtonText: 'Uji & Sambungkan',
+    denyButtonText: 'Gunakan Mode Offline',
+    cancelButtonText: 'Tutup',
+    confirmButtonColor: '#0d9488',
+    denyButtonColor: '#e11d48',
+    focusConfirm: false,
+    preConfirm: async () => {
+      const inputUrl = document.getElementById('swal-input-gas-url').value.trim();
+      if (!inputUrl) {
+        Swal.showValidationMessage('Masukkan URL Web App Google Apps Script yang valid!');
+        return false;
+      }
+      if (!inputUrl.startsWith('http') || !inputUrl.includes('/exec')) {
+        Swal.showValidationMessage('URL harus berawalan https:// dan berakhiran /exec!');
+        return false;
+      }
+      
+      try {
+        Swal.showLoading();
+        const testRes = await fetch(inputUrl + (inputUrl.includes('?') ? '&' : '?') + 'action=getInitData');
+        const testJson = await testRes.json();
+        if (!testJson || (!testJson.kelas && !testJson.status)) {
+          throw new Error("Respon tidak sesuai format backend");
+        }
+        return inputUrl;
+      } catch (e) {
+        Swal.showValidationMessage('Gagal menghubungi URL: ' + e.message + '. Pastikan opsi akses diatur ke "Siapa saja (Anyone)".');
+        return false;
+      }
+    }
+  }).then((res) => {
+    if (res.isConfirmed && res.value) {
+      GAS_API_URL = res.value;
+      localStorage.setItem("SIM_UH_GAS_URL", GAS_API_URL);
+      updateApiStatusIndicator();
+      Swal.fire({
+        icon: 'success',
+        title: 'Terhubung ke Spreadsheet!',
+        text: 'Aplikasi kini membaca dan menyimpan data langsung ke Google Sheets SMA Progresif Bumi Shalawat.',
+        timer: 2000,
+        showConfirmButton: false
+      });
+      loadInitialData();
+    } else if (res.isDenied) {
+      GAS_API_URL = "";
+      localStorage.removeItem("SIM_UH_GAS_URL");
+      updateApiStatusIndicator();
+      Swal.fire({
+        icon: 'info',
+        title: 'Mode Simulasi Offline',
+        text: 'Aplikasi kini menggunakan penyimpanan lokal.',
+        timer: 1500,
+        showConfirmButton: false
+      });
+      loadInitialData();
+    }
+  });
+}
+
+function updateApiStatusIndicator() {
+  const badgeText = document.getElementById('indicator-api-text');
+  const badgeDot = document.getElementById('indicator-api-dot');
+  if (!badgeText || !badgeDot) return;
+
+  if (GAS_API_URL && GAS_API_URL.startsWith("http")) {
+    badgeDot.className = "w-2 h-2 rounded-full bg-emerald-400 animate-pulse";
+    badgeText.textContent = "Google Sheets Terhubung";
+  } else {
+    badgeDot.className = "w-2 h-2 rounded-full bg-amber-400";
+    badgeText.textContent = "Simulasi Offline (Klik Disini)";
+  }
+}
+
+/**
+ * Mengambil Seluruh Data Awal dari Backend Apps Script atau Offline Store
+ */
+async function loadInitialData() {
+  const spinner = document.getElementById('loading-spinner');
+  if (spinner) spinner.classList.remove('hidden');
+  updateApiStatusIndicator();
+
+  try {
+    const response = await requestApi('getInitData');
+    if (response && response.kelas && response.bankSoal) {
+      appData = response;
+    } else {
+      loadMockData();
+    }
+  } catch (err) {
+    console.warn("Gagal terhubung ke GAS, beralih ke simulasi lokal:", err);
+    loadMockData();
+  } finally {
+    postDataLoaded();
+    if (spinner) spinner.classList.add('hidden');
+    switchTab('jadwal');
+  }
+}
+
+/**
+ * Mock Data jika dibuka di browser lokal
+ */
+function loadMockData() {
+  appData = {
+    kelas: [
+      { id: "KLS-01", nama: "X-1", tingkat: "10", kategori: "Reguler", keterangan: "Kelas X-1" },
+      { id: "KLS-02", nama: "X-2", tingkat: "10", kategori: "Reguler", keterangan: "Kelas X-2" },
+      { id: "KLS-03", nama: "X-Tahfidz", tingkat: "10", kategori: "Tahfidz", keterangan: "Unggulan Tahfidz" },
+      { id: "KLS-04", nama: "XI-MIPA 1", tingkat: "11", kategori: "MIPA Reguler", keterangan: "Kelas XI MIPA 1" },
+      { id: "KLS-05", nama: "XI-Unggulan", tingkat: "11", kategori: "Unggulan", keterangan: "Kelas XI Riset" },
+      { id: "KLS-06", nama: "XII-MIPA 1", tingkat: "12", kategori: "MIPA Reguler", keterangan: "Kelas XII MIPA 1" },
+      { id: "KLS-07", nama: "XII-CBT Khusus", tingkat: "12", kategori: "Laboratorium CBT", keterangan: "Ruang Lab CBT" }
+    ],
+    bankSoal: [
+      { id: "MAT-10-01", tingkat: "10", semester: "Ganjil", materi: "Hakikat Kimia, Metode Ilmiah & Keselamatan Lab", status: "Tersedia", jumlahSoal: 25, tipeUjian: "CBT PG", linkSoal: "https://forms.google.com", kunciJawaban: "Ada", keterangan: "Siap diujikan" },
+      { id: "MAT-10-02", tingkat: "10", semester: "Ganjil", materi: "Struktur Atom & Sistem Periodik Unsur", status: "Tersedia", jumlahSoal: 30, tipeUjian: "CBT PG + Uraian", linkSoal: "https://forms.google.com", kunciJawaban: "Ada", keterangan: "Siap pakai" },
+      { id: "MAT-10-03", tingkat: "10", semester: "Ganjil", materi: "Ikatan Kimia (Ionik, Kovalen, Logam)", status: "Belum Tersedia", jumlahSoal: 0, tipeUjian: "CBT PG", linkSoal: "", kunciJawaban: "Belum", keterangan: "Dalam penyusunan tim" },
+      { id: "MAT-11-01", tingkat: "11", semester: "Ganjil", materi: "Bentuk Molekul & Teori VSEPR", status: "Tersedia", jumlahSoal: 25, tipeUjian: "CBT PG", linkSoal: "https://forms.google.com", kunciJawaban: "Ada", keterangan: "Lengkap kunci" },
+      { id: "MAT-11-02", tingkat: "11", semester: "Ganjil", materi: "Termokimia & Hukum Hess", status: "Tersedia", jumlahSoal: 30, tipeUjian: "CBT PG + Uraian", linkSoal: "https://forms.google.com", kunciJawaban: "Ada", keterangan: "Siap diujikan" },
+      { id: "MAT-11-03", tingkat: "11", semester: "Ganjil", materi: "Laju Reaksi & Teori Tumbukan", status: "Belum Tersedia", jumlahSoal: 0, tipeUjian: "CBT PG", linkSoal: "", kunciJawaban: "Belum", keterangan: "Revisi soal stimulus" },
+      { id: "MAT-12-01", tingkat: "12", semester: "Ganjil", materi: "Sifat Koligatif Larutan", status: "Tersedia", jumlahSoal: 30, tipeUjian: "CBT PG", linkSoal: "https://forms.google.com", kunciJawaban: "Ada", keterangan: "Lengkap 4 sifat" },
+      { id: "MAT-12-02", tingkat: "12", semester: "Ganjil", materi: "Penyetaraan Redoks & Sel Volta", status: "Tersedia", jumlahSoal: 25, tipeUjian: "CBT PG", linkSoal: "https://forms.google.com", kunciJawaban: "Ada", keterangan: "Siap pakai" }
+    ],
+    jadwal: [
+      {
+        id: "JAD-MOCK-1",
+        namaGuru: "Dra. Siti Aminah",
+        namaKelas: "XI-MIPA 1",
+        tanggal: new Date().toISOString().substring(0, 10),
+        hari: "Senin",
+        jpMulai: "1",
+        jpSelesai: "2",
+        jamMulai: "07:00",
+        jamSelesai: "08:20",
+        rentangWaktu: "07:00 - 08:20 WIB",
+        materi: "Termokimia & Hukum Hess",
+        statusSoal: "Tersedia",
+        catatan: "Bawa kalkulator",
+        statusJadwal: "Aktif"
+      },
+      {
+        id: "JAD-MOCK-2",
+        namaGuru: "Budi Santoso, S.Pd",
+        namaKelas: "X-Tahfidz",
+        tanggal: new Date().toISOString().substring(0, 10),
+        hari: "Senin",
+        jpMulai: "1",
+        jpSelesai: "2",
+        jamMulai: "07:00",
+        jamSelesai: "08:20",
+        rentangWaktu: "07:00 - 08:20 WIB",
+        materi: "Hakikat Kimia & Keselamatan Lab",
+        statusSoal: "Tersedia",
+        catatan: "CBT di kelas masing-masing",
+        statusJadwal: "Aktif"
+      }
+    ],
+    config: { namaSekolah: "SMA Progresif Bumi Shalawat", tahunAjaran: "2026/2027" }
+  };
+}
+
+/**
+ * Dipanggil setelah data siap
+ */
+function postDataLoaded() {
+  populateKelasDropdowns();
+  populateMateriDropdown();
+  updateBadgesAndCounters();
+  renderUpcomingJadwalList();
+  renderBankSoalCards();
+  if (calendar) {
+    renderCalendarEvents();
+  }
+}
+
+/**
+ * Update Angka di Tab & Badge
+ */
+function updateBadgesAndCounters() {
+  const badgeJadwal = document.getElementById('badge-total-jadwal');
+  const badgeSoal = document.getElementById('badge-total-soal');
+  const statTersedia = document.getElementById('stat-soal-tersedia');
+  const statBelum = document.getElementById('stat-soal-belum');
+  const countKelas = document.getElementById('count-kelas');
+  
+  if (badgeJadwal) badgeJadwal.textContent = appData.jadwal.length;
+  if (badgeSoal) badgeSoal.textContent = appData.bankSoal.length;
+  if (countKelas) countKelas.textContent = appData.kelas.length;
+  
+  const totalTersedia = appData.bankSoal.filter(b => b.status === 'Tersedia').length;
+  const totalBelum = appData.bankSoal.filter(b => b.status !== 'Tersedia').length;
+  
+  if (statTersedia) statTersedia.textContent = `${totalTersedia} Materi Siap Uji`;
+  if (statBelum) statBelum.textContent = `${totalBelum} Dalam Penyusunan`;
+}
+
+/**
+ * Tab Switcher Utama
+ */
+function switchTab(tabId) {
+  // Cegah pembukaan admin jika belum login
+  if (tabId === 'admin' && !isAdminLoggedIn) {
+    toggleAdminModal(true);
+    return;
+  }
+
+  currentTab = tabId;
+  
+  // Update styling tombol tab
+  ['jadwal', 'kalender', 'banksoal', 'admin'].forEach(t => {
+    const btn = document.getElementById('tab-' + t);
+    const view = document.getElementById('view-' + t);
+    if (btn) {
+      if (t === tabId) {
+        btn.classList.add('active');
+        btn.classList.remove('text-teal-100');
+        btn.classList.add('text-white');
+      } else {
+        btn.classList.remove('active');
+        btn.classList.add('text-teal-100');
+        btn.classList.remove('text-white');
+      }
+    }
+    if (view) {
+      if (t === tabId) {
+        view.classList.remove('hidden');
+      } else {
+        view.classList.add('hidden');
+      }
+    }
+  });
+
+  // Jika tab kalender, render / resize kalender
+  if (tabId === 'kalender') {
+    initOrUpdateCalendar();
+  } else if (tabId === 'admin') {
+    renderAdminViews();
+  }
+}
+
+/**
+ * Mengisi Dropdown Kelas pada Form & Filter
+ */
+function populateKelasDropdowns() {
+  const selectKelas = document.getElementById('select-kelas');
+  const filterCalKelas = document.getElementById('filter-cal-kelas');
+  
+  if (selectKelas) {
+    selectKelas.innerHTML = '<option value="">-- Pilih Kelas --</option>';
+    
+    // Kelompokkan kelas berdasarkan tingkat (10, 11, 12)
+    const tingkatGroups = { '10': [], '11': [], '12': [] };
+    appData.kelas.forEach(k => {
+      if (tingkatGroups[k.tingkat]) {
+        tingkatGroups[k.tingkat].push(k);
+      } else {
+        tingkatGroups['10'].push(k);
+      }
+    });
+
+    Object.keys(tingkatGroups).forEach(tg => {
+      if (tingkatGroups[tg].length > 0) {
+        const optgroup = document.createElement('optgroup');
+        optgroup.label = `Kelas ${tg} (${tg === '10' ? 'Fase E' : 'Fase F'})`;
+        tingkatGroups[tg].forEach(k => {
+          const opt = document.createElement('option');
+          opt.value = k.nama;
+          opt.dataset.tingkat = k.tingkat;
+          opt.dataset.kategori = k.kategori || '';
+          opt.textContent = `${k.nama} ${k.kategori ? '(' + k.kategori + ')' : ''}`;
+          optgroup.appendChild(opt);
+        });
+        selectKelas.appendChild(optgroup);
+      }
+    });
+  }
+
+  if (filterCalKelas) {
+    filterCalKelas.innerHTML = '<option value="ALL">Semua Kelas</option>';
+    appData.kelas.forEach(k => {
+      const opt = document.createElement('option');
+      opt.value = k.nama;
+      opt.textContent = k.nama;
+      filterCalKelas.appendChild(opt);
+    });
+  }
+
+  // Update filter guru pada kalender
+  const filterCalGuru = document.getElementById('filter-cal-guru');
+  if (filterCalGuru) {
+    const uniqueGuru = [...new Set(appData.jadwal.map(j => j.namaGuru).filter(Boolean))];
+    filterCalGuru.innerHTML = '<option value="ALL">Semua Guru Kimia</option>';
+    uniqueGuru.forEach(g => {
+      const opt = document.createElement('option');
+      opt.value = g;
+      opt.textContent = g;
+      filterCalGuru.appendChild(opt);
+    });
+  }
+}
+
+/**
+ * Filter Materi pada Form Penjadwalan Berdasarkan Kelas yang Dipilih
+ */
+function handleKelasChange() {
+  const selectKelas = document.getElementById('select-kelas');
+  const selectedOption = selectKelas.options[selectKelas.selectedIndex];
+  const tingkat = selectedOption ? selectedOption.dataset.tingkat : null;
+  populateMateriDropdown(tingkat);
+}
+
+/**
+ * Isi Dropdown Materi Ujian (bisa disaring berdasarkan tingkat kelas)
+ */
+function populateMateriDropdown(filterTingkat = null) {
+  const selectMateri = document.getElementById('select-materi');
+  if (!selectMateri) return;
+
+  selectMateri.innerHTML = '<option value="">-- Pilih Materi dari Bank Soal --</option>';
+
+  let list = appData.bankSoal;
+  if (filterTingkat) {
+    list = appData.bankSoal.filter(b => b.tingkat === filterTingkat);
+    // Jika hasil filter kosong, tampilkan semua
+    if (list.length === 0) list = appData.bankSoal;
+  }
+
+  // Kelompokkan per Tingkat
+  const groups = {};
+  list.forEach(m => {
+    const key = `Kelas ${m.tingkat} - Semester ${m.semester}`;
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(m);
+  });
+
+  Object.keys(groups).forEach(grp => {
+    const optgroup = document.createElement('optgroup');
+    optgroup.label = grp;
+    groups[grp].forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m.materi;
+      opt.dataset.id = m.id;
+      opt.dataset.status = m.status;
+      opt.dataset.jumlah = m.jumlahSoal;
+      opt.dataset.tipe = m.tipeUjian;
+      opt.dataset.link = m.linkSoal || '';
+      const iconStatus = m.status === 'Tersedia' ? '🟢' : '🟡';
+      opt.textContent = `${iconStatus} ${m.materi} (${m.status})`;
+      optgroup.appendChild(opt);
+    });
+    selectMateri.appendChild(optgroup);
+  });
+
+  // Opsi Tambah Materi Kustom
+  const optCustom = document.createElement('option');
+  optCustom.value = "CUSTOM";
+  optCustom.textContent = "+ Ketik Materi Kustom / Tambahan...";
+  selectMateri.appendChild(optCustom);
+
+  // Sembunyikan box status saat reset
+  resetStatusSoalBox();
+}
+
+/**
+ * Handler saat Materi dipilih di Form
+ */
+function handleMateriSelectChange() {
+  const selectMateri = document.getElementById('select-materi');
+  const customWrapper = document.getElementById('wrapper-materi-custom');
+  const boxStatus = document.getElementById('box-status-soal');
+  const titleStatus = document.getElementById('title-status-soal');
+  const descStatus = document.getElementById('desc-status-soal');
+  const iconStatus = document.getElementById('icon-status-soal');
+
+  const selectedVal = selectMateri.value;
+
+  if (selectedVal === "CUSTOM") {
+    customWrapper.classList.remove('hidden');
+    boxStatus.classList.remove('hidden');
+    boxStatus.className = "mt-3 p-3.5 rounded-xl border bg-slate-50 border-slate-200 text-slate-700";
+    iconStatus.innerHTML = '<i data-lucide="edit-3" class="w-5 h-5 text-slate-500"></i>';
+    titleStatus.textContent = "Materi Kustom / Khusus";
+    descStatus.textContent = "Anda menggunakan materi kustom di luar bank soal utama.";
+    lucide.createIcons();
+    return;
+  } else {
+    customWrapper.classList.add('hidden');
+  }
+
+  if (!selectedVal) {
+    resetStatusSoalBox();
+    return;
+  }
+
+  const selectedOption = selectMateri.options[selectMateri.selectedIndex];
+  const status = selectedOption.dataset.status;
+  const jumlah = selectedOption.dataset.jumlah;
+  const tipe = selectedOption.dataset.tipe;
+  const link = selectedOption.dataset.link;
+
+  boxStatus.classList.remove('hidden');
+
+  if (status === 'Tersedia') {
+    boxStatus.className = "mt-3 p-3.5 rounded-xl border bg-emerald-50/90 border-emerald-300 text-emerald-900";
+    iconStatus.innerHTML = '<i data-lucide="check-circle-2" class="w-5 h-5 text-emerald-600"></i>';
+    titleStatus.textContent = `Soal TERSEDIA di Bank Soal (${jumlah} Butir Soal)`;
+    descStatus.textContent = `Tipe Ujian: ${tipe || 'CBT'}. Naskah soal siap digunakan. Hubungi TQA untuk akses naskah ujian.`;
+  } else {
+    boxStatus.className = "mt-3 p-3.5 rounded-xl border bg-amber-50/90 border-amber-300 text-amber-900";
+    iconStatus.innerHTML = '<i data-lucide="alert-triangle" class="w-5 h-5 text-amber-600"></i>';
+    titleStatus.textContent = "Soal BELUM TERSEDIA di Bank Soal";
+    descStatus.textContent = "Materi ini belum memiliki butir soal terverifikasi. Anda tetap dapat menjadwalkan, namun pastikan berkoordinasi dengan Admin/TQA Kimia.";
+  }
+
+  lucide.createIcons();
+}
+
+function resetStatusSoalBox() {
+  const boxStatus = document.getElementById('box-status-soal');
+  if (boxStatus) boxStatus.classList.add('hidden');
+}
+
+/**
+ * Handler saat Tanggal Dipilih:
+ * Mengatur pilihan JP sesuai aturan hari sekolah
+ */
+function handleTanggalChange() {
+  const inputTgl = document.getElementById('input-tanggal');
+  const badgeInfo = document.getElementById('badge-info-hari');
+  const textInfo = document.getElementById('text-info-hari');
+  const badgeDurasi = document.getElementById('badge-durasi-hari');
+  const btnSubmit = document.getElementById('btn-submit-jadwal');
+  
+  if (!inputTgl.value) return;
+
+  const date = new Date(inputTgl.value + "T00:00:00");
+  const dayOfWeek = date.getDay(); // 0: Minggu, 1: Senin, ..., 5: Jumat, 6: Sabtu
+  const namaHari = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"][dayOfWeek];
+
+  // 1. Validasi Hari Minggu
+  if (dayOfWeek === 0) {
+    badgeInfo.className = "p-2.5 rounded-xl bg-rose-50 text-rose-700 text-xs font-bold flex items-center gap-2 border border-rose-300";
+    textInfo.textContent = "Hari Minggu: Libur Sekolah (Tidak ada UH)";
+    badgeDurasi.textContent = "0 JP";
+    btnSubmit.disabled = true;
+    btnSubmit.classList.add('opacity-50', 'cursor-not-allowed');
+    populateJpOptions(0);
+    return;
+  }
+
+  btnSubmit.disabled = false;
+  btnSubmit.classList.remove('opacity-50', 'cursor-not-allowed');
+
+  // 2. Senin s/d Kamis: 8 JP
+  if (dayOfWeek >= 1 && dayOfWeek <= 4) {
+    badgeInfo.className = "p-2.5 rounded-xl bg-teal-50 text-teal-800 text-xs font-semibold flex items-center gap-2 border border-teal-200";
+    textInfo.textContent = `Hari ${namaHari}: Jadwal Normal 8 JP (07.00 - 12.30 WIB)`;
+    badgeDurasi.textContent = "Maksimal 8 JP";
+    populateJpOptions(8, 'regular');
+  }
+  // 3. Jumat: 4 JP (07.00 - 09.40)
+  else if (dayOfWeek === 5) {
+    badgeInfo.className = "p-2.5 rounded-xl bg-emerald-50 text-emerald-800 text-xs font-semibold flex items-center gap-2 border border-emerald-200";
+    textInfo.textContent = "Hari Jumat: Khusus 4 JP (07.00 - 09.40 WIB)";
+    badgeDurasi.textContent = "Hanya 4 JP";
+    populateJpOptions(4, 'jumat');
+  }
+  // 4. Sabtu: 4 JP Mulai 07.40
+  else if (dayOfWeek === 6) {
+    badgeInfo.className = "p-2.5 rounded-xl bg-blue-50 text-blue-800 text-xs font-semibold flex items-center gap-2 border border-blue-200";
+    textInfo.textContent = "Hari Sabtu: 4 JP Mulai 07.40 (07.40 - 10.20 WIB)";
+    badgeDurasi.textContent = "4 JP (Mulai 07.40)";
+    populateJpOptions(4, 'sabtu');
+  }
+
+  calculateTimePreview();
+}
+
+/**
+ * Mengisi Dropdown JP Mulai & JP Selesai
+ */
+function populateJpOptions(maxJp, scheduleType) {
+  const selMulai = document.getElementById('select-jp-mulai');
+  const selSelesai = document.getElementById('select-jp-selesai');
+  
+  selMulai.innerHTML = '';
+  selSelesai.innerHTML = '';
+
+  if (maxJp === 0) {
+    selMulai.innerHTML = '<option value="">Libur</option>';
+    selSelesai.innerHTML = '<option value="">Libur</option>';
+    return;
+  }
+
+  const config = TIME_CONFIG[scheduleType];
+
+  for (let i = 1; i <= maxJp; i++) {
+    const slot = config.slots[i];
+    const optM = document.createElement('option');
+    optM.value = i;
+    optM.textContent = `JP ${i} (${slot.start} - ${slot.end})`;
+    selMulai.appendChild(optM);
+
+    const optS = document.createElement('option');
+    optS.value = i;
+    optS.textContent = `JP ${i} (${slot.start} - ${slot.end})`;
+    selSelesai.appendChild(optS);
+  }
+
+  // Default: 2 JP (misal JP 1 s/d JP 2)
+  selMulai.value = "1";
+  selSelesai.value = maxJp >= 2 ? "2" : "1";
+}
+
+/**
+ * Hitung Estimasi Jam & Durasi secara Real-Time di Form
+ */
+function calculateTimePreview() {
+  const inputTgl = document.getElementById('input-tanggal');
+  const selMulai = document.getElementById('select-jp-mulai');
+  const selSelesai = document.getElementById('select-jp-selesai');
+  const textJam = document.getElementById('text-rentang-jam');
+  const textDurasi = document.getElementById('text-durasi-menit');
+
+  if (!inputTgl.value || !selMulai.value) return;
+
+  const date = new Date(inputTgl.value + "T00:00:00");
+  const dayOfWeek = date.getDay();
+
+  if (dayOfWeek === 0) {
+    textJam.textContent = "Hari Libur";
+    textDurasi.textContent = "0 Menit";
+    return;
+  }
+
+  let scheduleType = 'regular';
+  if (dayOfWeek === 5) scheduleType = 'jumat';
+  if (dayOfWeek === 6) scheduleType = 'sabtu';
+
+  const config = TIME_CONFIG[scheduleType];
+  let jpStart = parseInt(selMulai.value, 10);
+  let jpEnd = parseInt(selSelesai.value || selMulai.value, 10);
+
+  // Jika JP selesai lebih kecil dari JP mulai, samakan
+  if (jpEnd < jpStart) {
+    jpEnd = jpStart;
+    selSelesai.value = jpStart;
+  }
+
+  const slotStart = config.slots[jpStart];
+  const slotEnd = config.slots[jpEnd];
+
+  if (slotStart && slotEnd) {
+    textJam.textContent = `${slotStart.start} - ${slotEnd.end} WIB (JP ${jpStart}${jpStart !== jpEnd ? ' - ' + jpEnd : ''})`;
+    
+    // Hitung durasi dalam menit
+    const [h1, m1] = slotStart.start.split(':').map(Number);
+    const [h2, m2] = slotEnd.end.split(':').map(Number);
+    const totalMinutes = (h2 * 60 + m2) - (h1 * 60 + m1);
+    textDurasi.textContent = `${totalMinutes} Menit`;
+  }
+}
+
+/**
+ * Handler Kirim Form Penjadwalan UH
+ */
+function handleFormJadwalSubmit(e) {
+  e.preventDefault();
+
+  const namaGuru = document.getElementById('input-nama-guru').value.trim();
+  const namaKelas = document.getElementById('select-kelas').value;
+  const tanggal = document.getElementById('input-tanggal').value;
+  const jpMulai = document.getElementById('select-jp-mulai').value;
+  const jpSelesai = document.getElementById('select-jp-selesai').value;
+  let materi = document.getElementById('select-materi').value;
+  const catatan = document.getElementById('input-catatan').value.trim();
+
+  if (materi === "CUSTOM") {
+    materi = document.getElementById('input-materi-custom').value.trim();
+    if (!materi) {
+      Swal.fire({ icon: 'warning', title: 'Perhatian', text: 'Tuliskan nama materi khusus Anda!', confirmButtonColor: '#0d9488' });
+      return;
+    }
+  }
+
+  if (!namaGuru || !namaKelas || !tanggal || !jpMulai || !materi) {
+    Swal.fire({ icon: 'warning', title: 'Form Belum Lengkap', text: 'Pastikan seluruh kolom bertanda bintang (*) telah terisi.', confirmButtonColor: '#0d9488' });
+    return;
+  }
+
+  // Periksa Status Ketersediaan Soal Terkait
+  const matchSoal = appData.bankSoal.find(b => b.materi.toLowerCase() === materi.toLowerCase());
+  const statusKesiapanSoal = matchSoal ? matchSoal.status : 'Materi Kustom';
+
+  const formData = {
+    namaGuru: namaGuru,
+    namaKelas: namaKelas,
+    tanggal: tanggal,
+    jpMulai: jpMulai,
+    jpSelesai: jpSelesai,
+    materi: materi,
+    statusSoal: statusKesiapanSoal,
+    tipeCbt: matchSoal ? matchSoal.tipeUjian : 'CBT',
+    catatan: catatan
+  };
+
+  const btnSubmit = document.getElementById('btn-submit-jadwal');
+  btnSubmit.disabled = true;
+  btnSubmit.innerHTML = '<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> Mengirim Jadwal ke Spreadsheet...';
+  lucide.createIcons();
+
+  const handleSuccessFeedback = (detail, isSimulasi = false) => {
+    Swal.fire({
+      icon: 'success',
+      title: 'Tanggapan Anda Telah Dicatat!',
+      html: `
+        <div class="text-left text-xs space-y-2 p-3.5 bg-slate-50 rounded-xl border border-slate-200 mt-2">
+          <div class="text-teal-800 font-bold text-sm pb-1 border-b border-slate-200 flex items-center justify-between">
+            <span>Rincian Jadwal UH CBT:</span>
+            <span class="text-[10px] px-2 py-0.5 rounded bg-teal-100 text-teal-800">Tersimpan</span>
+          </div>
+          <div class="grid grid-cols-2 gap-1.5 pt-1">
+            <div><span class="text-slate-400">Guru:</span> <b class="text-slate-800">${namaGuru}</b></div>
+            <div><span class="text-slate-400">Kelas:</span> <b class="text-slate-800">${namaKelas}</b></div>
+            <div class="col-span-2"><span class="text-slate-400">Hari & Tanggal:</span> <b class="text-slate-800">${tanggal} (${detail.hari})</b></div>
+            <div class="col-span-2"><span class="text-slate-400">Jam Sekolah:</span> <b class="text-teal-900">${detail.rentangWaktu} (${detail.jpText})</b></div>
+            <div class="col-span-2"><span class="text-slate-400">Materi Ujian:</span> <b class="text-slate-900">${materi}</b></div>
+            <div class="col-span-2"><span class="text-slate-400">Kesiapan Bank Soal:</span> <b class="${statusKesiapanSoal === 'Tersedia' ? 'text-emerald-700' : 'text-amber-700'}">${statusKesiapanSoal}</b></div>
+          </div>
+        </div>
+        <p class="text-xs text-slate-500 mt-3">Jadwal Anda otomatis tampil di Kalender Rekap Sekolah.</p>
+      `,
+      showCancelButton: true,
+      confirmButtonText: '📅 Buka Kalender Rekap',
+      cancelButtonText: '📝 Kirim Jadwal Lain',
+      confirmButtonColor: '#0d9488',
+      cancelButtonColor: '#0f766e',
+      reverseButtons: true
+    }).then((result) => {
+      document.getElementById('form-jadwal').reset();
+      initDefaultDate();
+      resetStatusSoalBox();
+      const customWrap = document.getElementById('wrapper-materi-custom');
+      if (customWrap) customWrap.classList.add('hidden');
+      loadInitialData();
+
+      if (result.isConfirmed) {
+        switchTab('kalender');
+      }
+    });
+  };
+
+  requestApi('simpanJadwal', { formData: formData })
+    .then((response) => {
+      btnSubmit.disabled = false;
+      btnSubmit.innerHTML = '<i data-lucide="send" class="w-4 h-4"></i> Kirim Jadwal (Submit)';
+      lucide.createIcons();
+
+      if (response && response.success) {
+        handleSuccessFeedback(response.detail, false);
+      } else {
+        Swal.fire({
+          icon: 'error',
+          title: 'Gagal',
+          text: (response && response.message) || 'Terjadi kesalahan saat menyimpan jadwal.',
+          confirmButtonColor: '#0d9488'
+        });
+      }
+    })
+    .catch((err) => {
+      btnSubmit.disabled = false;
+      btnSubmit.innerHTML = '<i data-lucide="send" class="w-4 h-4"></i> Kirim Jadwal (Submit)';
+      lucide.createIcons();
+      Swal.fire({
+        icon: 'error',
+        title: 'Kesalahan Sistem',
+        text: err.message,
+        confirmButtonColor: '#0d9488'
+      });
+    });
+}
+
+/**
+ * Kosongkan Formulir (Khas Google Form)
+ */
+function resetFormJadwal() {
+  Swal.fire({
+    title: 'Kosongkan Formulir?',
+    text: 'Seluruh isian formulir akan dikosongkan.',
+    icon: 'question',
+    showCancelButton: true,
+    confirmButtonColor: '#0d9488',
+    cancelButtonColor: '#64748b',
+    confirmButtonText: 'Ya, Kosongkan',
+    cancelButtonText: 'Batal'
+  }).then((res) => {
+    if (res.isConfirmed) {
+      document.getElementById('form-jadwal').reset();
+      initDefaultDate();
+      resetStatusSoalBox();
+      const customWrap = document.getElementById('wrapper-materi-custom');
+      if (customWrap) customWrap.classList.add('hidden');
+    }
+  });
+}
+
+/**
+ * Render Daftar Jadwal Terdekat di Sidebar Kanan Form
+ */
+function renderUpcomingJadwalList() {
+  const container = document.getElementById('list-jadwal-terdekat');
+  if (!container) return;
+
+  if (appData.jadwal.length === 0) {
+    container.innerHTML = '<p class="text-xs text-slate-400 py-3 text-center">Belum ada ulangan harian yang dijadwalkan.</p>';
+    return;
+  }
+
+  // Urutkan jadwal terdekat berdasarkan tanggal
+  const sorted = [...appData.jadwal].sort((a, b) => new Date(a.tanggal) - new Date(b.tanggal)).slice(0, 5);
+
+  container.innerHTML = sorted.map(j => {
+    // Warna badge tingkat kelas
+    let bgBadge = 'bg-teal-50 text-teal-700 border-teal-200';
+    if (j.namaKelas.startsWith('11') || j.namaKelas.startsWith('XI')) {
+      bgBadge = 'bg-blue-50 text-blue-700 border-blue-200';
+    } else if (j.namaKelas.startsWith('12') || j.namaKelas.startsWith('XII')) {
+      bgBadge = 'bg-purple-50 text-purple-700 border-purple-200';
+    }
+
+    return `
+      <div onclick="bukaModalDetailJadwal('${j.id}')" class="p-2.5 rounded-xl border border-slate-200/70 hover:border-teal-400 hover:bg-teal-50/40 transition cursor-pointer flex items-start justify-between gap-2">
+        <div>
+          <div class="flex items-center gap-1.5">
+            <span class="px-2 py-0.5 rounded text-[10px] font-bold border ${bgBadge}">${j.namaKelas}</span>
+            <span class="text-xs font-bold text-slate-800">${j.tanggal}</span>
+          </div>
+          <div class="text-xs font-medium text-slate-700 mt-1 line-clamp-1">${j.materi}</div>
+          <div class="text-[11px] text-slate-400">${j.namaGuru} | ${j.rentangWaktu || ('JP ' + j.jpMulai)}</div>
+        </div>
+        <i data-lucide="chevron-right" class="w-4 h-4 text-slate-400 mt-2 flex-shrink-0"></i>
+      </div>
+    `;
+  }).join('');
+
+  lucide.createIcons();
+}
+
+/**
+ * ============================================================================
+ * FULLCALENDAR REKAP JADWAL
+ * ============================================================================
+ */
+function setCalendarMode(mode) {
+  if (!calendar) return;
+  calendar.changeView(mode);
+
+  const btnMonth = document.getElementById('btn-view-month');
+  const btnList = document.getElementById('btn-view-list');
+
+  if (mode === 'dayGridMonth') {
+    if (btnMonth) {
+      btnMonth.className = 'px-3 py-1.5 rounded-lg text-xs font-bold transition bg-white text-teal-800 shadow-xs flex items-center gap-1.5';
+    }
+    if (btnList) {
+      btnList.className = 'px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:text-slate-900 transition flex items-center gap-1.5';
+    }
+  } else {
+    if (btnMonth) {
+      btnMonth.className = 'px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:text-slate-900 transition flex items-center gap-1.5';
+    }
+    if (btnList) {
+      btnList.className = 'px-3 py-1.5 rounded-lg text-xs font-bold transition bg-white text-teal-800 shadow-xs flex items-center gap-1.5';
+    }
+  }
+}
+
+function initOrUpdateCalendar() {
+  const calendarEl = document.getElementById('calendar');
+  if (!calendarEl) return;
+
+  const isMobile = window.innerWidth < 768;
+
+  if (!calendar) {
+    calendar = new FullCalendar.Calendar(calendarEl, {
+      initialView: isMobile ? 'listMonth' : 'dayGridMonth',
+      headerToolbar: isMobile ? {
+        left: 'prev,next',
+        center: 'title',
+        right: 'today'
+      } : {
+        left: 'prev,next today',
+        center: 'title',
+        right: 'dayGridMonth,timeGridWeek,listMonth'
+      },
+      locale: 'id',
+      buttonText: {
+        today: 'Hari Ini',
+        month: 'Bulan',
+        week: 'Minggu',
+        list: 'Daftar'
+      },
+      height: 'auto',
+      eventTimeFormat: {
+        hour: '2-digit',
+        minute: '2-digit',
+        meridiem: false,
+        hour12: false
+      },
+      eventClick: function(info) {
+        bukaModalDetailJadwal(info.event.id);
+      }
+    });
+    calendar.render();
+
+    // Sesuaikan tombol active
+    setCalendarMode(isMobile ? 'listMonth' : 'dayGridMonth');
+
+    // Listener otomatis resize saat rotasi layar HP / perubahan ukuran jendela
+    window.addEventListener('resize', () => {
+      if (calendar) calendar.updateSize();
+    });
+  }
+
+  renderCalendarEvents();
+  setTimeout(() => calendar.updateSize(), 200);
+}
+
+/**
+ * Render Events ke Kalender dengan Filter
+ */
+function renderCalendarEvents() {
+  if (!calendar) return;
+
+  calendar.removeAllEvents();
+
+  const filterTingkat = document.getElementById('filter-cal-tingkat')?.value || 'ALL';
+  const filterKelas = document.getElementById('filter-cal-kelas')?.value || 'ALL';
+  const filterGuru = document.getElementById('filter-cal-guru')?.value || 'ALL';
+
+  const filtered = appData.jadwal.filter(j => {
+    // Filter Kelas
+    if (filterKelas !== 'ALL' && j.namaKelas !== filterKelas) return false;
+    // Filter Guru
+    if (filterGuru !== 'ALL' && j.namaGuru !== filterGuru) return false;
+    // Filter Tingkat
+    if (filterTingkat !== 'ALL') {
+      const isMatch = j.namaKelas.includes(filterTingkat) ||
+        (filterTingkat === '10' && (j.namaKelas.startsWith('X-') || j.namaKelas.startsWith('X '))) ||
+        (filterTingkat === '11' && (j.namaKelas.startsWith('XI-') || j.namaKelas.startsWith('XI '))) ||
+        (filterTingkat === '12' && (j.namaKelas.startsWith('XII-') || j.namaKelas.startsWith('XII ')));
+      if (!isMatch) return false;
+    }
+    return true;
+  });
+
+  const events = filtered.map(j => {
+    // Tentukan warna berdasarkan tingkat kelas
+    let color = '#0d9488'; // Default Teal (Kelas 10)
+    if (j.namaKelas.includes('11') || j.namaKelas.includes('XI')) {
+      color = '#2563eb'; // Biru (Kelas 11)
+    } else if (j.namaKelas.includes('12') || j.namaKelas.includes('XII')) {
+      color = '#9333ea'; // Ungu (Kelas 12)
+    }
+
+    const startDateTime = j.jamMulai ? `${j.tanggal}T${j.jamMulai}:00` : j.tanggal;
+    const endDateTime = j.jamSelesai ? `${j.tanggal}T${j.jamSelesai}:00` : null;
+
+    return {
+      id: j.id,
+      title: `[${j.namaKelas}] ${j.materi}`,
+      start: startDateTime,
+      end: endDateTime,
+      backgroundColor: color,
+      borderColor: color,
+      textColor: '#ffffff',
+      extendedProps: j
+    };
+  });
+
+  calendar.addEventSource(events);
+}
+
+/**
+ * Modal Detail Jadwal Kalender
+ */
+function bukaModalDetailJadwal(idJadwal) {
+  const item = appData.jadwal.find(j => j.id === idJadwal);
+  if (!item) return;
+
+  currentActiveEventData = item;
+
+  document.getElementById('modal-detail-kelas').textContent = `${item.namaKelas}`;
+  document.getElementById('modal-detail-guru').textContent = `Guru Pengampu: ${item.namaGuru}`;
+  document.getElementById('modal-detail-tanggal').textContent = `${item.tanggal} (${item.hari || '-'})`;
+  document.getElementById('modal-detail-jp').textContent = item.jpMulai === item.jpSelesai ? `JP ${item.jpMulai}` : `JP ${item.jpMulai} - ${item.jpSelesai}`;
+  document.getElementById('modal-detail-jam').textContent = item.rentangWaktu || `${item.jamMulai} - ${item.jamSelesai} WIB`;
+  document.getElementById('modal-detail-materi').textContent = item.materi;
+  
+  const statusEl = document.getElementById('modal-detail-status-soal');
+  if (item.statusSoal === 'Tersedia') {
+    statusEl.className = 'font-bold px-2.5 py-0.5 rounded text-[11px] bg-emerald-100 text-emerald-800';
+    statusEl.textContent = 'Soal Tersedia di Bank Soal';
+  } else {
+    statusEl.className = 'font-bold px-2.5 py-0.5 rounded text-[11px] bg-amber-100 text-amber-800';
+    statusEl.textContent = item.statusSoal || 'Belum Terverifikasi';
+  }
+
+  const catatanEl = document.getElementById('modal-detail-catatan');
+  catatanEl.textContent = item.catatan || 'Tidak ada catatan tambahan.';
+
+  // Tampilkan tombol hapus hanya jika mode admin
+  const btnHapus = document.getElementById('modal-btn-hapus-jadwal');
+  if (isAdminLoggedIn) {
+    btnHapus.classList.remove('hidden');
+  } else {
+    btnHapus.classList.add('hidden');
+  }
+
+  document.getElementById('modal-detail-jadwal').classList.remove('hidden');
+}
+
+function tutupModalDetailJadwal() {
+  document.getElementById('modal-detail-jadwal').classList.add('hidden');
+  currentActiveEventData = null;
+}
+
+/**
+ * Hapus Jadwal dari Modal
+ */
+function handleHapusJadwalModal() {
+  if (!currentActiveEventData) return;
+  hapusJadwalItem(currentActiveEventData.id);
+  tutupModalDetailJadwal();
+}
+
+/**
+ * ============================================================================
+ * BANK SOAL KIMIA (KELAS 10 - 12)
+ * ============================================================================
+ */
+function renderBankSoalCards() {
+  const container = document.getElementById('grid-bank-soal');
+  if (!container) return;
+
+  const search = (document.getElementById('filter-bs-search')?.value || '').toLowerCase();
+  const tingkat = document.getElementById('filter-bs-tingkat')?.value || 'ALL';
+  const semester = document.getElementById('filter-bs-semester')?.value || 'ALL';
+  const status = document.getElementById('filter-bs-status')?.value || 'ALL';
+
+  const filtered = appData.bankSoal.filter(b => {
+    if (tingkat !== 'ALL' && b.tingkat !== tingkat) return false;
+    if (semester !== 'ALL' && b.semester !== semester) return false;
+    if (status !== 'ALL' && b.status !== status) return false;
+    if (search && !b.materi.toLowerCase().includes(search)) return false;
+    return true;
+  });
+
+  if (filtered.length === 0) {
+    container.innerHTML = `
+      <div class="col-span-full py-12 text-center bg-white rounded-2xl border border-slate-200">
+        <i data-lucide="search-x" class="w-10 h-10 text-slate-300 mx-auto mb-2"></i>
+        <h4 class="text-sm font-bold text-slate-700">Materi Tidak Ditemukan</h4>
+        <p class="text-xs text-slate-400">Coba ubah filter pencarian atau kata kunci materi Anda.</p>
+      </div>
+    `;
+    lucide.createIcons();
+    return;
+  }
+
+  container.innerHTML = filtered.map(item => {
+    const isTersedia = item.status === 'Tersedia';
+    const statusBadge = isTersedia
+      ? `<span class="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1">
+           <span class="w-1.5 h-1.5 rounded-full bg-emerald-600"></span> Soal Siap Diujikan
+         </span>`
+      : `<span class="px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200 flex items-center gap-1">
+           <span class="w-1.5 h-1.5 rounded-full bg-amber-600"></span> Belum Tersedia
+         </span>`;
+
+    let tingkatColor = 'text-teal-700 bg-teal-50 border-teal-200';
+    if (item.tingkat === '11') tingkatColor = 'text-blue-700 bg-blue-50 border-blue-200';
+    if (item.tingkat === '12') tingkatColor = 'text-purple-700 bg-purple-50 border-purple-200';
+
+    return `
+      <div class="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm hover:shadow-md hover:border-teal-300 transition flex flex-col justify-between space-y-4">
+        <div>
+          <div class="flex items-center justify-between gap-2 mb-2.5">
+            <span class="px-2.5 py-0.5 rounded-md text-[11px] font-bold border ${tingkatColor}">
+              Kelas ${item.tingkat} - ${item.semester}
+            </span>
+            ${statusBadge}
+          </div>
+
+          <h3 class="text-sm font-bold text-slate-800 leading-snug">${item.materi}</h3>
+          
+          <div class="mt-3 grid grid-cols-2 gap-2 text-[11px] bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+            <div>
+              <span class="text-slate-400 block">Jumlah Soal:</span>
+              <span class="font-bold text-slate-700">${item.jumlahSoal > 0 ? item.jumlahSoal + ' Butir' : '-'}</span>
+            </div>
+            <div>
+              <span class="text-slate-400 block">Tipe Ujian:</span>
+              <span class="font-bold text-slate-700">${item.tipeUjian || 'CBT'}</span>
+            </div>
+          </div>
+
+          ${item.keterangan ? `<p class="text-[11px] text-slate-500 italic mt-2.5">${item.keterangan}</p>` : ''}
+        </div>
+
+        <div class="pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <span class="text-[11px] text-amber-800 bg-amber-50 px-2 py-1 rounded-md font-medium flex items-center gap-1 border border-amber-200">
+            <i data-lucide="shield-alert" class="w-3 h-3 text-amber-600"></i>
+            Hubungi TQA untuk mengakses soal
+          </span>
+
+          <button onclick="jadwalkanMateriIni('${encodeURIComponent(item.materi)}', '${item.tingkat}')" class="px-3 py-1.5 bg-teal-50 hover:bg-teal-600 text-teal-700 hover:text-white font-bold rounded-lg text-xs transition flex items-center justify-center gap-1">
+            <i data-lucide="calendar-plus" class="w-3.5 h-3.5"></i>
+            Jadwalkan UH
+          </button>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  lucide.createIcons();
+}
+
+/**
+ * Tombol Cepat: Jadwalkan Materi Ini dari Bank Soal
+ */
+function jadwalkanMateriIni(materiEscaped, tingkat) {
+  const materi = decodeURIComponent(materiEscaped);
+  switchTab('jadwal');
+  
+  setTimeout(() => {
+    const selectMateri = document.getElementById('select-materi');
+    if (selectMateri) {
+      // Cari opsi yang sesuai
+      for (let i = 0; i < selectMateri.options.length; i++) {
+        if (selectMateri.options[i].value.toLowerCase() === materi.toLowerCase()) {
+          selectMateri.selectedIndex = i;
+          handleMateriSelectChange();
+          break;
+        }
+      }
+    }
+  }, 100);
+}
+
+/**
+ * ============================================================================
+ * PANEL ADMINISTRASI & MANAJEMEN JENIS KELAS
+ * ============================================================================
+ */
+function handleSecretAdminClick() {
+  if (!isAdminLoggedIn) {
+    toggleAdminModal(true);
+  } else {
+    Swal.fire({
+      title: 'Administrator Aktif',
+      text: 'Anda saat ini berada dalam mode administrator.',
+      icon: 'info',
+      showCancelButton: true,
+      confirmButtonText: 'Buka Panel Admin',
+      cancelButtonText: 'Keluar (Logout)',
+      confirmButtonColor: '#0d9488',
+      cancelButtonColor: '#e11d48'
+    }).then((result) => {
+      if (result.isConfirmed) {
+        switchTab('admin');
+      } else if (result.dismiss === Swal.DismissReason.cancel) {
+        logoutAdmin();
+      }
+    });
+  }
+}
+
+function toggleAdminModal(show = true) {
+  const modal = document.getElementById('modal-admin-login');
+  if (show) {
+    modal.classList.remove('hidden');
+    document.getElementById('input-admin-pin').value = '';
+    document.getElementById('input-admin-pin').focus();
+  } else {
+    modal.classList.add('hidden');
+    // Jika Batal ditekan dan belum login, PASTIKAN view-admin terkunci dan tidak bisa dibuka!
+    if (!isAdminLoggedIn) {
+      const viewAdmin = document.getElementById('view-admin');
+      if (viewAdmin) viewAdmin.classList.add('hidden');
+      const tabAdmin = document.getElementById('tab-admin');
+      if (tabAdmin) tabAdmin.classList.add('hidden');
+      
+      if (currentTab === 'admin') {
+        currentTab = 'jadwal';
+      }
+      // Tampilkan tab jadwal yang aman
+      const safeView = document.getElementById('view-' + currentTab);
+      if (safeView) safeView.classList.remove('hidden');
+      const safeBtn = document.getElementById('tab-' + currentTab);
+      if (safeBtn) {
+        safeBtn.classList.add('active');
+        safeBtn.classList.add('text-white');
+      }
+    }
+  }
+}
+
+function submitAdminPin() {
+  const pin = document.getElementById('input-admin-pin').value.trim();
+  if (!pin) {
+    Swal.fire({ icon: 'warning', title: 'Perhatian', text: 'Masukkan Password Administrator!', confirmButtonColor: '#0d9488' });
+    return;
+  }
+
+  const btn = document.getElementById('btn-login-pin');
+  btn.disabled = true;
+  btn.textContent = 'Memverifikasi...';
+
+  const successAction = () => {
+    isAdminLoggedIn = true;
+    verifiedAdminPin = pin;
+    toggleAdminModal(false);
+    updateAdminAuthUI(true);
+    
+    // Tampilkan tab admin di navbar karena sudah berhasil login
+    const tabAdmin = document.getElementById('tab-admin');
+    if (tabAdmin) tabAdmin.classList.remove('hidden');
+    
+    switchTab('admin');
+    Swal.fire({ icon: 'success', title: 'Akses Diterima', text: 'Selamat datang di Mode Administrator.', timer: 1500, showConfirmButton: false });
+  };
+
+  requestApi('verifikasiPin', { pin: pin })
+    .then((res) => {
+      btn.disabled = false;
+      btn.textContent = 'Verifikasi Akses';
+      if (res && (res.valid === true || res === true)) {
+        successAction();
+      } else {
+        Swal.fire({ icon: 'error', title: 'Akses Ditolak', text: 'Password Administrator yang Anda masukkan salah.', confirmButtonColor: '#0d9488' });
+      }
+    })
+    .catch((err) => {
+      btn.disabled = false;
+      btn.textContent = 'Verifikasi Akses';
+      if (pin === 'kimiasatuhati') {
+        successAction();
+      } else {
+        Swal.fire({ icon: 'error', title: 'Kesalahan Verifikasi', text: err.message, confirmButtonColor: '#0d9488' });
+      }
+    });
+}
+
+function logoutAdmin() {
+  isAdminLoggedIn = false;
+  verifiedAdminPin = '';
+  updateAdminAuthUI(false);
+  
+  // Sembunyikan kembali tab admin dan kunci panel admin
+  const tabAdmin = document.getElementById('tab-admin');
+  if (tabAdmin) tabAdmin.classList.add('hidden');
+  const viewAdmin = document.getElementById('view-admin');
+  if (viewAdmin) viewAdmin.classList.add('hidden');
+  
+  switchTab('jadwal');
+  Swal.fire({ icon: 'info', title: 'Keluar', text: 'Anda telah keluar dari mode administrator.', timer: 1400, showConfirmButton: false });
+}
+
+function updateAdminAuthUI(isLoggedIn) {
+  const iconSecret = document.getElementById('icon-secret-admin');
+  const btnSecret = document.getElementById('btn-secret-admin');
+
+  if (isLoggedIn) {
+    if (btnSecret) {
+      btnSecret.className = "ml-1 p-1 text-emerald-300 hover:text-emerald-100 rounded-md bg-white/20 transition cursor-pointer";
+      btnSecret.title = "Mode Admin Aktif (Klik untuk kelola / keluar)";
+    }
+    if (iconSecret) {
+      iconSecret.setAttribute('data-lucide', 'unlock');
+    }
+  } else {
+    if (btnSecret) {
+      btnSecret.className = "ml-1 p-1 text-teal-200/50 hover:text-white rounded-md hover:bg-white/15 transition cursor-pointer";
+      btnSecret.title = "Akses Administrator";
+    }
+    if (iconSecret) {
+      iconSecret.setAttribute('data-lucide', 'lock');
+    }
+  }
+  lucide.createIcons();
+}
+
+function switchAdminTab(tabName) {
+  currentAdminSubTab = tabName;
+  ['soal', 'kelas', 'jadwal'].forEach(t => {
+    const btn = document.getElementById('admin-subtab-' + t);
+    const view = document.getElementById('admin-view-' + t);
+    if (btn) {
+      if ('kelola-' + t === tabName) {
+        btn.className = "px-4 py-2 text-sm font-bold text-teal-700 border-b-2 border-teal-600 flex items-center gap-2";
+      } else {
+        btn.className = "px-4 py-2 text-sm font-medium text-slate-500 hover:text-slate-800 flex items-center gap-2";
+      }
+    }
+    if (view) {
+      if ('kelola-' + t === tabName) {
+        view.classList.remove('hidden');
+      } else {
+        view.classList.add('hidden');
+      }
+    }
+  });
+  renderAdminViews();
+}
+
+function renderAdminViews() {
+  renderAdminTableSoal();
+  renderAdminTableKelas();
+  renderAdminTableJadwal();
+}
+
+/**
+ * Admin: Render Tabel Bank Soal & Toggle Status
+ */
+function renderAdminTableSoal() {
+  const tbody = document.getElementById('table-body-admin-soal');
+  if (!tbody) return;
+
+  tbody.innerHTML = appData.bankSoal.map(b => {
+    const isTersedia = b.status === 'Tersedia';
+    return `
+      <tr class="hover:bg-slate-50/80">
+        <td class="py-3 px-4 font-bold text-slate-700">Kelas ${b.tingkat} (${b.semester})</td>
+        <td class="py-3 px-4 font-semibold text-slate-900">${b.materi}</td>
+        <td class="py-3 px-4">
+          <button onclick="handleToggleStatusMateri('${b.id}')" class="px-2.5 py-1 rounded-full text-[11px] font-bold ${isTersedia ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'} hover:opacity-80 transition cursor-pointer">
+            ${isTersedia ? '🟢 Tersedia' : '🟡 Belum Tersedia'}
+          </button>
+        </td>
+        <td class="py-3 px-4 text-slate-600">${b.jumlahSoal || 0} Butir (${b.tipeUjian || 'CBT'})</td>
+        <td class="py-3 px-4">
+          ${b.linkSoal ? `<a href="${b.linkSoal}" target="_blank" class="text-teal-600 underline font-medium">Buka Link</a>` : '<span class="text-slate-400">-</span>'}
+        </td>
+        <td class="py-3 px-4 text-center space-x-1">
+          <button onclick="bukaModalEditMateri('${b.id}')" class="p-1 rounded text-slate-600 hover:text-teal-600 hover:bg-teal-50" title="Edit Data">
+            <i data-lucide="edit-2" class="w-4 h-4"></i>
+          </button>
+          <button onclick="hapusMateriItem('${b.id}')" class="p-1 rounded text-slate-600 hover:text-rose-600 hover:bg-rose-50" title="Hapus Materi">
+            <i data-lucide="trash-2" class="w-4 h-4"></i>
+          </button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+
+  lucide.createIcons();
+}
+
+/**
+ * Admin: Toggle Status Bank Soal Cepat
+ */
+function handleToggleStatusMateri(idMateri) {
+  const item = appData.bankSoal.find(b => b.id === idMateri);
+  if (!item) return;
+
+  const newStatus = item.status === 'Tersedia' ? 'Belum Tersedia' : 'Tersedia';
+
+  requestApi('toggleStatusSoal', { idMateri: idMateri, pin: verifiedAdminPin })
+    .then((res) => {
+      if (res && res.success) {
+        item.status = res.newStatus || newStatus;
+        renderAdminTableSoal();
+        renderBankSoalCards();
+        updateBadgesAndCounters();
+        Swal.fire({ icon: 'success', title: 'Status Diubah', text: res.message, timer: 1200, showConfirmButton: false });
+      }
+    })
+    .catch(() => {
+      item.status = newStatus;
+      renderAdminTableSoal();
+      renderBankSoalCards();
+      updateBadgesAndCounters();
+    });
+}
+
+/**
+ * Admin: Tambah / Edit Materi Bank Soal
+ */
+function bukaModalTambahMateri() {
+  document.getElementById('modal-materi-title').textContent = 'Tambah Materi Bank Soal Baru';
+  document.getElementById('modal-materi-id').value = '';
+  document.getElementById('form-modal-materi').reset();
+  document.getElementById('modal-materi-banksoal').classList.remove('hidden');
+}
+
+function bukaModalEditMateri(idMateri) {
+  const item = appData.bankSoal.find(b => b.id === idMateri);
+  if (!item) return;
+
+  document.getElementById('modal-materi-title').textContent = 'Edit Materi Bank Soal';
+  document.getElementById('modal-materi-id').value = item.id;
+  document.getElementById('modal-materi-tingkat').value = item.tingkat;
+  document.getElementById('modal-materi-semester').value = item.semester;
+  document.getElementById('modal-materi-nama').value = item.materi;
+  document.getElementById('modal-materi-status').value = item.status;
+  document.getElementById('modal-materi-jumlah').value = item.jumlahSoal || 0;
+  document.getElementById('modal-materi-tipe').value = item.tipeUjian || 'CBT Pilihan Ganda';
+  document.getElementById('modal-materi-kunci').value = item.kunciJawaban || 'Ada';
+  document.getElementById('modal-materi-link').value = item.linkSoal || '';
+  document.getElementById('modal-materi-ket').value = item.keterangan || '';
+
+  document.getElementById('modal-materi-banksoal').classList.remove('hidden');
+}
+
+function tutupModalMateri() {
+  document.getElementById('modal-materi-banksoal').classList.add('hidden');
+}
+
+function handleMateriSubmit(e) {
+  e.preventDefault();
+
+  const id = document.getElementById('modal-materi-id').value;
+  const materiData = {
+    id: id || undefined,
+    tingkat: document.getElementById('modal-materi-tingkat').value,
+    semester: document.getElementById('modal-materi-semester').value,
+    materi: document.getElementById('modal-materi-nama').value.trim(),
+    status: document.getElementById('modal-materi-status').value,
+    jumlahSoal: Number(document.getElementById('modal-materi-jumlah').value || 0),
+    tipeUjian: document.getElementById('modal-materi-tipe').value.trim(),
+    kunciJawaban: document.getElementById('modal-materi-kunci').value,
+    linkSoal: document.getElementById('modal-materi-link').value.trim(),
+    keterangan: document.getElementById('modal-materi-ket').value.trim()
+  };
+
+  const btn = document.getElementById('btn-submit-modal-materi');
+  btn.disabled = true;
+  btn.textContent = 'Menyimpan...';
+
+  requestApi('simpanMateri', { materiData: materiData, pin: verifiedAdminPin })
+    .then((res) => {
+      btn.disabled = false;
+      btn.textContent = 'Simpan Data Materi';
+      if (res && res.success) {
+        tutupModalMateri();
+        loadInitialData();
+        Swal.fire({ icon: 'success', title: 'Berhasil', text: res.message, timer: 1500, showConfirmButton: false });
+      } else {
+        Swal.fire({ icon: 'error', title: 'Gagal', text: (res && res.message) || 'Gagal menyimpan materi' });
+      }
+    })
+    .catch((err) => {
+      btn.disabled = false;
+      btn.textContent = 'Simpan Data Materi';
+      Swal.fire({ icon: 'error', title: 'Kesalahan Sistem', text: err.message });
+    });
+}
+
+function hapusMateriItem(idMateri) {
+  Swal.fire({
+    title: 'Hapus Materi Ini?',
+    text: 'Materi yang dihapus tidak dapat dipulihkan kembali.',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonColor: '#e11d48',
+    cancelButtonColor: '#64748b',
+    confirmButtonText: 'Ya, Hapus'
+  }).then((res) => {
+    if (res.isConfirmed) {
+      requestApi('hapusMateri', { idMateri: idMateri, pin: verifiedAdminPin })
+        .then((r) => {
+          if (r && r.success) {
+            loadInitialData();
+            Swal.fire('Terhapus!', r.message, 'success');
+          } else {
+            Swal.fire('Gagal', (r && r.message) || 'Gagal menghapus materi', 'error');
+          }
+        })
+        .catch((err) => {
+          Swal.fire('Kesalahan', err.message, 'error');
+        });
+    }
+  });
+}
+
+/**
+ * ============================================================================
+ * ADMIN: KELOLA JENIS KELAS (SESUAI REQUEST USER)
+ * ============================================================================
+ */
+function renderAdminTableKelas() {
+  const tbody = document.getElementById('table-body-admin-kelas');
+  if (!tbody) return;
+
+  tbody.innerHTML = appData.kelas.map(k => {
+    return `
+      <tr class="hover:bg-slate-50/80">
+        <td class="py-2.5 px-4 font-bold text-slate-800">${k.nama}</td>
+        <td class="py-2.5 px-4">Kelas ${k.tingkat}</td>
+        <td class="py-2.5 px-4"><span class="px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-medium">${k.kategori || 'Reguler'}</span></td>
+        <td class="py-2.5 px-4 text-slate-500">${k.keterangan || '-'}</td>
+        <td class="py-2.5 px-4 text-center">
+          <button onclick="hapusKelasItem('${k.id}')" class="p-1 rounded text-rose-600 hover:bg-rose-50" title="Hapus Kelas">
+            <i data-lucide="trash-2" class="w-4 h-4"></i>
+          </button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+
+  lucide.createIcons();
+}
+
+function handleTambahKelasSubmit(e) {
+  e.preventDefault();
+
+  const nama = document.getElementById('input-kelas-nama').value.trim();
+  const tingkat = document.getElementById('input-kelas-tingkat').value;
+  const kategori = document.getElementById('input-kelas-kategori').value.trim();
+  const keterangan = document.getElementById('input-kelas-keterangan').value.trim();
+
+  if (!nama || !tingkat) {
+    Swal.fire({ icon: 'warning', title: 'Perhatian', text: 'Nama kelas dan tingkat wajib diisi!', confirmButtonColor: '#0d9488' });
+    return;
+  }
+
+  const kelasData = { nama, tingkat, kategori, keterangan };
+  const btn = document.getElementById('btn-tambah-kelas');
+  btn.disabled = true;
+  btn.innerHTML = '<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> Menyimpan...';
+  lucide.createIcons();
+
+  requestApi('tambahKelas', { kelasData: kelasData, pin: verifiedAdminPin })
+    .then((res) => {
+      btn.disabled = false;
+      btn.innerHTML = '<i data-lucide="plus" class="w-4 h-4"></i> Simpan Kelas';
+      lucide.createIcons();
+
+      if (res && res.success) {
+        document.getElementById('input-kelas-nama').value = '';
+        document.getElementById('input-kelas-kategori').value = '';
+        document.getElementById('input-kelas-keterangan').value = '';
+        loadInitialData();
+        Swal.fire({ icon: 'success', title: 'Kelas Ditambahkan', text: res.message, timer: 1500, showConfirmButton: false });
+      } else {
+        Swal.fire({ icon: 'error', title: 'Gagal', text: (res && res.message) || 'Gagal menambahkan kelas' });
+      }
+    })
+    .catch((err) => {
+      btn.disabled = false;
+      btn.innerHTML = '<i data-lucide="plus" class="w-4 h-4"></i> Simpan Kelas';
+      lucide.createIcons();
+      Swal.fire({ icon: 'error', title: 'Kesalahan Sistem', text: err.message });
+    });
+}
+
+function hapusKelasItem(idKelas) {
+  Swal.fire({
+    title: 'Hapus Kelas Ini?',
+    text: 'Kelas akan dihapus dari pilihan form guru.',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonColor: '#e11d48',
+    cancelButtonColor: '#64748b',
+    confirmButtonText: 'Ya, Hapus'
+  }).then((res) => {
+    if (res.isConfirmed) {
+      requestApi('hapusKelas', { idKelas: idKelas, pin: verifiedAdminPin })
+        .then((r) => {
+          if (r && r.success) {
+            loadInitialData();
+            Swal.fire('Terhapus!', r.message, 'success');
+          } else {
+            Swal.fire('Gagal', (r && r.message) || 'Gagal menghapus kelas', 'error');
+          }
+        })
+        .catch((err) => {
+          Swal.fire('Kesalahan', err.message, 'error');
+        });
+    }
+  });
+}
+
+/**
+ * ============================================================================
+ * ADMIN: KELOLA JADWAL & PRINT
+ * ============================================================================
+ */
+function renderAdminTableJadwal() {
+  const tbody = document.getElementById('table-body-admin-jadwal');
+  if (!tbody) return;
+
+  if (appData.jadwal.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" class="py-6 text-center text-slate-400">Belum ada ulangan harian yang terjadwal.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = appData.jadwal.map(j => {
+    return `
+      <tr class="hover:bg-slate-50/80">
+        <td class="py-3 px-4">
+          <div class="font-bold text-slate-800">${j.tanggal} (${j.hari})</div>
+          <div class="text-[11px] text-teal-700 font-semibold">${j.rentangWaktu || ('JP ' + j.jpMulai)}</div>
+        </td>
+        <td class="py-3 px-4 font-bold text-slate-800">${j.namaKelas}</td>
+        <td class="py-3 px-4 text-slate-700">${j.namaGuru}</td>
+        <td class="py-3 px-4 font-medium text-slate-900">${j.materi}</td>
+        <td class="py-3 px-4">
+          <span class="px-2 py-0.5 rounded text-[10px] font-bold ${j.statusSoal === 'Tersedia' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}">
+            ${j.statusSoal || 'Proses'}
+          </span>
+        </td>
+        <td class="py-3 px-4 text-center no-print">
+          <button onclick="hapusJadwalItem('${j.id}')" class="p-1 rounded text-rose-600 hover:bg-rose-50" title="Hapus / Batalkan Jadwal">
+            <i data-lucide="trash-2" class="w-4 h-4"></i>
+          </button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+
+  lucide.createIcons();
+}
+
+function hapusJadwalItem(idJadwal) {
+  Swal.fire({
+    title: 'Hapus / Batalkan Jadwal?',
+    text: 'Jadwal ulangan ini akan dihapus dari sistem dan kalender.',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonColor: '#e11d48',
+    cancelButtonColor: '#64748b',
+    confirmButtonText: 'Ya, Batalkan Jadwal'
+  }).then((res) => {
+    if (res.isConfirmed) {
+      requestApi('hapusJadwal', { idJadwal: idJadwal, pin: verifiedAdminPin })
+        .then((r) => {
+          if (r && r.success) {
+            loadInitialData();
+            Swal.fire('Dibatalkan!', r.message, 'success');
+          } else {
+            Swal.fire('Gagal', (r && r.message) || 'Gagal membatalkan jadwal', 'error');
+          }
+        })
+        .catch((err) => {
+          Swal.fire('Kesalahan', err.message, 'error');
+        });
+    }
+  });
+}
+
+function cetakRekapJadwal() {
+  window.print();
+}
+
+/**
+ * ============================================================================
+ * GANTI PIN ADMIN
+ * ============================================================================
+ */
+function bukaModalGantiPin() {
+  document.getElementById('input-pin-baru').value = '';
+  document.getElementById('input-pin-konfirmasi').value = '';
+  document.getElementById('modal-ganti-pin').classList.remove('hidden');
+}
+
+function tutupModalGantiPin() {
+  document.getElementById('modal-ganti-pin').classList.add('hidden');
+}
+
+function submitGantiPin() {
+  const pinBaru = document.getElementById('input-pin-baru').value.trim();
+  const konfirmasi = document.getElementById('input-pin-konfirmasi').value.trim();
+
+  if (pinBaru.length < 4) {
+    Swal.fire({ icon: 'warning', title: 'Perhatian', text: 'PIN baru minimal 4 digit!', confirmButtonColor: '#0d9488' });
+    return;
+  }
+  if (pinBaru !== konfirmasi) {
+    Swal.fire({ icon: 'error', title: 'Tidak Cocok', text: 'Konfirmasi PIN baru tidak sesuai!', confirmButtonColor: '#0d9488' });
+    return;
+  }
+
+  requestApi('ubahPin', { oldPin: verifiedAdminPin, newPin: pinBaru })
+    .then((res) => {
+      if (res && res.success) {
+        verifiedAdminPin = pinBaru;
+        tutupModalGantiPin();
+        Swal.fire({ icon: 'success', title: 'Password Diperbarui', text: res.message });
+      } else {
+        Swal.fire({ icon: 'error', title: 'Gagal', text: (res && res.message) || 'Gagal mengubah password' });
+      }
+    })
+    .catch((err) => {
+      verifiedAdminPin = pinBaru;
+      tutupModalGantiPin();
+      Swal.fire({ icon: 'success', title: 'Password Diperbarui (Simulasi)', timer: 1400 });
+    });
+}
+</script>
