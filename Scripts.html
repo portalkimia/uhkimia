@@ -605,56 +605,62 @@ function switchTab(tabId) {
 }
 
 /**
- * Mengisi Dropdown Kelas pada Form & Filter
+/**
+ * Mengisi Dropdown Kelas pada Form & Filter Kalender
  */
 function populateKelasDropdowns() {
+  const selectTingkat = document.getElementById('select-tingkat-kelas');
   const selectKelas = document.getElementById('select-kelas');
   const filterCalKelas = document.getElementById('filter-cal-kelas');
   
-  if (selectKelas) {
-    selectKelas.innerHTML = '<option value="">-- Pilih Kelas --</option>';
-    
-    // Kelompokkan kelas berdasarkan tingkat (10, 11, 12)
-    const tingkatGroups = { '10': [], '11': [], '12': [] };
-    appData.kelas.forEach(k => {
-      if (tingkatGroups[k.tingkat]) {
-        tingkatGroups[k.tingkat].push(k);
-      } else {
-        tingkatGroups['10'].push(k);
-      }
-    });
-
-    Object.keys(tingkatGroups).forEach(tg => {
-      if (tingkatGroups[tg].length > 0) {
-        const optgroup = document.createElement('optgroup');
-        optgroup.label = `Kelas ${tg} (${tg === '10' ? 'Fase E' : 'Fase F'})`;
-        tingkatGroups[tg].forEach(k => {
-          const opt = document.createElement('option');
-          opt.value = k.nama;
-          opt.dataset.tingkat = k.tingkat;
-          opt.dataset.kategori = k.kategori || '';
-          opt.textContent = `${k.nama} ${k.kategori ? '(' + k.kategori + ')' : ''}`;
-          optgroup.appendChild(opt);
-        });
-        selectKelas.appendChild(optgroup);
-      }
-    });
+  // Jika tingkat kelas pada form sudah terpilih, render kelas berdasarkan tingkat tersebut
+  if (selectTingkat && selectTingkat.value) {
+    const currentVal = selectKelas ? selectKelas.value : null;
+    renderKelasByTingkat(selectTingkat.value, currentVal);
+  } else {
+    resetKelasDropdown();
   }
 
+  // Update dropdown filter kelas pada Kalender Rekap (menampilkan seluruh 49 kelas)
   if (filterCalKelas) {
     filterCalKelas.innerHTML = '<option value="ALL">Semua Kelas</option>';
-    appData.kelas.forEach(k => {
-      const opt = document.createElement('option');
-      opt.value = k.nama;
-      opt.textContent = k.nama;
-      filterCalKelas.appendChild(opt);
+    const sortedKelas = [...appData.kelas].sort((a, b) => a.nama.localeCompare(b.nama, undefined, { numeric: true, sensitivity: 'base' }));
+    
+    // Kelompokkan per tingkat di filter kalender
+    const groups = { '10': [], '11': [], '12': [] };
+    sortedKelas.forEach(k => {
+      const t = String(k.tingkat || '').trim();
+      const n = String(k.nama || '').trim();
+      if (t === '10' || (n.startsWith('X') && !n.startsWith('XI') && !n.startsWith('XII'))) {
+        groups['10'].push(k);
+      } else if (t === '11' || (n.startsWith('XI') && !n.startsWith('XII'))) {
+        groups['11'].push(k);
+      } else if (t === '12' || n.startsWith('XII')) {
+        groups['12'].push(k);
+      } else {
+        groups['10'].push(k);
+      }
+    });
+
+    Object.keys(groups).forEach(tg => {
+      if (groups[tg].length > 0) {
+        const optgroup = document.createElement('optgroup');
+        optgroup.label = `Kelas ${tg} (${tg === '10' ? 'Fase E' : 'Fase F'})`;
+        groups[tg].forEach(k => {
+          const opt = document.createElement('option');
+          opt.value = k.nama;
+          opt.textContent = k.nama + (k.kategori ? ` [${k.kategori}]` : '');
+          optgroup.appendChild(opt);
+        });
+        filterCalKelas.appendChild(optgroup);
+      }
     });
   }
 
   // Update filter guru pada kalender
   const filterCalGuru = document.getElementById('filter-cal-guru');
   if (filterCalGuru) {
-    const uniqueGuru = [...new Set(appData.jadwal.map(j => j.namaGuru).filter(Boolean))];
+    const uniqueGuru = [...new Set(appData.jadwal.map(j => j.namaGuru).filter(Boolean))].sort();
     filterCalGuru.innerHTML = '<option value="ALL">Semua Guru Kimia</option>';
     uniqueGuru.forEach(g => {
       const opt = document.createElement('option');
@@ -666,13 +672,120 @@ function populateKelasDropdowns() {
 }
 
 /**
+ * Handler ketika Jenjang Tingkat Kelas dipilih (Langkah 1)
+ */
+function handleTingkatKelasChange() {
+  const selectTingkat = document.getElementById('select-tingkat-kelas');
+  const tingkat = selectTingkat ? selectTingkat.value : '';
+
+  if (!tingkat) {
+    resetKelasDropdown();
+    populateMateriDropdown(null);
+    return;
+  }
+
+  renderKelasByTingkat(tingkat);
+  // Otomatis saring materi bank soal sesuai tingkat yang dipilih
+  populateMateriDropdown(tingkat);
+}
+
+/**
+ * Render nama-nama kelas yang sesuai dengan jenjang tingkat terpilih (Langkah 2)
+ */
+function renderKelasByTingkat(tingkat, selectedValue = null) {
+  const selectKelas = document.getElementById('select-kelas');
+  const badge2 = document.getElementById('badge-langkah-2');
+  const hintText = document.getElementById('hint-kelas-text');
+  const hintJumlah = document.getElementById('hint-jumlah-kelas');
+  if (!selectKelas) return;
+
+  // Aktifkan select-kelas
+  selectKelas.disabled = false;
+  selectKelas.className = "w-full pl-10 pr-8 py-3 bg-slate-50/70 focus:bg-white border border-slate-300 rounded-xl text-base sm:text-sm font-medium focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none transition cursor-pointer text-slate-800";
+  
+  if (badge2) {
+    badge2.className = "text-[10px] text-teal-800 font-bold bg-teal-50 px-2 py-0.5 rounded border border-teal-200";
+  }
+
+  // Saring kelas sesuai tingkat jenjang
+  const filtered = appData.kelas.filter(k => {
+    const kStr = String(k.tingkat || '').trim();
+    if (kStr === String(tingkat)) return true;
+    const n = String(k.nama || '').trim();
+    if (tingkat === '10') {
+      return n.startsWith('X') && !n.startsWith('XI') && !n.startsWith('XII');
+    } else if (tingkat === '11') {
+      return n.startsWith('XI') && !n.startsWith('XII');
+    } else if (tingkat === '12') {
+      return n.startsWith('XII');
+    }
+    return false;
+  });
+
+  // Urutkan secara natural (misal X1, X2, ... X15)
+  filtered.sort((a, b) => a.nama.localeCompare(b.nama, undefined, { numeric: true, sensitivity: 'base' }));
+
+  const labelTingkat = tingkat === '10' ? 'Kelas 10' : (tingkat === '11' ? 'Kelas 11' : 'Kelas 12');
+  selectKelas.innerHTML = `<option value="">-- Pilih Rombel (${labelTingkat}) --</option>`;
+
+  filtered.forEach(k => {
+    const opt = document.createElement('option');
+    opt.value = k.nama;
+    opt.dataset.tingkat = k.tingkat || tingkat;
+    opt.dataset.kategori = k.kategori || '';
+    const katText = k.kategori ? ` [${k.kategori}]` : '';
+    opt.textContent = `${k.nama}${katText}`;
+    if (selectedValue && k.nama === selectedValue) {
+      opt.selected = true;
+    }
+    selectKelas.appendChild(opt);
+  });
+
+  if (hintText) {
+    hintText.textContent = `Menampilkan daftar rombel ${labelTingkat} (Fase ${tingkat === '10' ? 'E' : 'F'}):`;
+  }
+  if (hintJumlah) {
+    hintJumlah.textContent = `${filtered.length} kelas ditemukan`;
+  }
+}
+
+/**
+ * Kembalikan Dropdown Kelas ke status disabled (belum memilih tingkat)
+ */
+function resetKelasDropdown() {
+  const selectKelas = document.getElementById('select-kelas');
+  const badge2 = document.getElementById('badge-langkah-2');
+  const hintText = document.getElementById('hint-kelas-text');
+  const hintJumlah = document.getElementById('hint-jumlah-kelas');
+  if (!selectKelas) return;
+
+  selectKelas.disabled = true;
+  selectKelas.value = "";
+  selectKelas.className = "w-full pl-10 pr-8 py-3 bg-slate-100 border border-slate-200 rounded-xl text-base sm:text-sm font-medium text-slate-400 focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none transition cursor-not-allowed";
+  selectKelas.innerHTML = '<option value="">-- Pilih Tingkat Terlebih Dahulu --</option>';
+
+  if (badge2) {
+    badge2.className = "text-[10px] text-slate-400 font-bold bg-slate-100 px-2 py-0.5 rounded border border-slate-200";
+  }
+  if (hintText) {
+    hintText.textContent = "Tersedia 49 kelas (Reguler, Prima, ICP, IUPP, CTP, Atlet, dsb).";
+  }
+  if (hintJumlah) {
+    hintJumlah.textContent = "";
+  }
+}
+
+/**
  * Filter Materi pada Form Penjadwalan Berdasarkan Kelas yang Dipilih
  */
 function handleKelasChange() {
   const selectKelas = document.getElementById('select-kelas');
-  const selectedOption = selectKelas.options[selectKelas.selectedIndex];
-  const tingkat = selectedOption ? selectedOption.dataset.tingkat : null;
-  populateMateriDropdown(tingkat);
+  const selectTingkat = document.getElementById('select-tingkat-kelas');
+  const selectedOption = selectKelas && selectKelas.selectedIndex >= 0 ? selectKelas.options[selectKelas.selectedIndex] : null;
+  const tingkat = (selectedOption && selectedOption.dataset.tingkat) || (selectTingkat ? selectTingkat.value : null);
+  if (tingkat) {
+    populateMateriDropdown(tingkat);
+  }
 }
 
 /**
@@ -949,8 +1062,24 @@ function handleFormJadwalSubmit(e) {
     }
   }
 
+  const selectTingkat = document.getElementById('select-tingkat-kelas');
+  if (selectTingkat && !selectTingkat.value) {
+    Swal.fire({
+      icon: 'warning',
+      title: 'Jenjang Belum Dipilih',
+      text: 'Silakan pilih jenjang tingkat kelas terlebih dahulu (Langkah 1).',
+      confirmButtonColor: '#0d9488'
+    });
+    return;
+  }
+
   if (!namaGuru || !namaKelas || !tanggal || !jpMulai || !materi) {
-    Swal.fire({ icon: 'warning', title: 'Form Belum Lengkap', text: 'Pastikan seluruh kolom bertanda bintang (*) telah terisi.', confirmButtonColor: '#0d9488' });
+    Swal.fire({
+      icon: 'warning',
+      title: 'Form Belum Lengkap',
+      text: 'Pastikan seluruh kolom bertanda bintang (*) termasuk nama rombel kelas telah terisi.',
+      confirmButtonColor: '#0d9488'
+    });
     return;
   }
 
@@ -1004,6 +1133,8 @@ function handleFormJadwalSubmit(e) {
       reverseButtons: true
     }).then((result) => {
       document.getElementById('form-jadwal').reset();
+      resetKelasDropdown();
+      populateMateriDropdown(null);
       initDefaultDate();
       resetStatusSoalBox();
       const customWrap = document.getElementById('wrapper-materi-custom');
@@ -1089,6 +1220,8 @@ function resetFormJadwal() {
   }).then((res) => {
     if (res.isConfirmed) {
       document.getElementById('form-jadwal').reset();
+      resetKelasDropdown();
+      populateMateriDropdown(null);
       initDefaultDate();
       resetStatusSoalBox();
       const customWrap = document.getElementById('wrapper-materi-custom');
@@ -1238,10 +1371,15 @@ function renderCalendarEvents() {
     if (filterGuru !== 'ALL' && j.namaGuru !== filterGuru) return false;
     // Filter Tingkat
     if (filterTingkat !== 'ALL') {
-      const isMatch = j.namaKelas.includes(filterTingkat) ||
-        (filterTingkat === '10' && (j.namaKelas.startsWith('X-') || j.namaKelas.startsWith('X '))) ||
-        (filterTingkat === '11' && (j.namaKelas.startsWith('XI-') || j.namaKelas.startsWith('XI '))) ||
-        (filterTingkat === '12' && (j.namaKelas.startsWith('XII-') || j.namaKelas.startsWith('XII ')));
+      const n = String(j.namaKelas || '').trim();
+      let isMatch = false;
+      if (filterTingkat === '10') {
+        isMatch = (n.startsWith('X') && !n.startsWith('XI') && !n.startsWith('XII')) || n.includes('10');
+      } else if (filterTingkat === '11') {
+        isMatch = (n.startsWith('XI') && !n.startsWith('XII')) || n.includes('11');
+      } else if (filterTingkat === '12') {
+        isMatch = n.startsWith('XII') || n.includes('12');
+      }
       if (!isMatch) return false;
     }
     return true;
@@ -1250,9 +1388,10 @@ function renderCalendarEvents() {
   const events = filtered.map(j => {
     // Tentukan warna berdasarkan tingkat kelas
     let color = '#0d9488'; // Default Teal (Kelas 10)
-    if (j.namaKelas.includes('11') || j.namaKelas.includes('XI')) {
+    const n = String(j.namaKelas || '').trim();
+    if ((n.startsWith('XI') && !n.startsWith('XII')) || n.includes('11')) {
       color = '#2563eb'; // Biru (Kelas 11)
-    } else if (j.namaKelas.includes('12') || j.namaKelas.includes('XII')) {
+    } else if (n.startsWith('XII') || n.includes('12')) {
       color = '#9333ea'; // Ungu (Kelas 12)
     }
 

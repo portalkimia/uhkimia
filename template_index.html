@@ -169,22 +169,57 @@
           </div>
         </div>
 
-        <!-- KARTU 2: PILIHAN KELAS -->
-        <div class="gform-card p-5 sm:p-6">
-          <label for="select-kelas" class="block text-sm font-bold text-slate-800 mb-1">
-            2. Nama / Jenis Kelas <span class="text-rose-600">*</span>
-          </label>
-          <p class="text-xs text-slate-500 mb-3">Pilih kelas yang akan mengikuti ulangan harian</p>
-          <div class="relative">
-            <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
-              <i data-lucide="graduation-cap" class="w-4 h-4"></i>
-            </span>
-            <select id="select-kelas" required onchange="handleKelasChange()" class="w-full pl-10 pr-3.5 py-3 bg-slate-50/70 focus:bg-white border border-slate-300 rounded-xl text-base sm:text-sm font-medium focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none transition cursor-pointer">
-              <option value="">-- Pilih Kelas --</option>
-              <!-- Dinamis terisi dari data Master Kelas -->
-            </select>
+        <!-- KARTU 2: PILIHAN TINGKAT & ROMBEL KELAS (DIPERKECIL BERDASARKAN JENJANG) -->
+        <div class="gform-card p-5 sm:p-6 space-y-3.5">
+          <div>
+            <label class="block text-sm font-bold text-slate-800 mb-1">
+              2. Jenjang Tingkat & Rombel Kelas <span class="text-rose-600">*</span>
+            </label>
+            <p class="text-xs text-slate-500">Pilih tingkat jenjang terlebih dahulu untuk menyaring daftar 49 kelas secara spesifik</p>
           </div>
-          <p class="text-[11px] text-slate-400 mt-2">Daftar kelas di atas mencakup kelas reguler, tahfidz, bilingual, riset, dan dapat ditambah oleh admin.</p>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+            <!-- 2A. Pilih Tingkat / Jenjang -->
+            <div>
+              <label for="select-tingkat-kelas" class="block text-xs font-bold text-slate-700 mb-1.5 flex items-center justify-between">
+                <span>Tingkat / Jenjang</span>
+                <span class="text-[10px] text-teal-800 font-bold bg-teal-50 px-2 py-0.5 rounded border border-teal-200">Langkah 1</span>
+              </label>
+              <div class="relative">
+                <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                  <i data-lucide="layers" class="w-4 h-4"></i>
+                </span>
+                <select id="select-tingkat-kelas" required onchange="handleTingkatKelasChange()" class="w-full pl-10 pr-8 py-3 bg-slate-50/70 focus:bg-white border border-slate-300 rounded-xl text-base sm:text-sm font-medium focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none transition cursor-pointer">
+                  <option value="">-- Pilih Tingkat Kelas --</option>
+                  <option value="10">Kelas 10 (Fase E)</option>
+                  <option value="11">Kelas 11 (Fase F)</option>
+                  <option value="12">Kelas 12 (Fase F)</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- 2B. Pilih Nama / Rombel Kelas -->
+            <div>
+              <label for="select-kelas" class="block text-xs font-bold text-slate-700 mb-1.5 flex items-center justify-between">
+                <span>Nama / Rombel Kelas</span>
+                <span id="badge-langkah-2" class="text-[10px] text-slate-400 font-bold bg-slate-100 px-2 py-0.5 rounded border border-slate-200">Langkah 2</span>
+              </label>
+              <div class="relative">
+                <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                  <i data-lucide="graduation-cap" class="w-4 h-4"></i>
+                </span>
+                <select id="select-kelas" required disabled onchange="handleKelasChange()" class="w-full pl-10 pr-8 py-3 bg-slate-100 border border-slate-200 rounded-xl text-base sm:text-sm font-medium text-slate-400 focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none transition cursor-not-allowed">
+                  <option value="">-- Pilih Tingkat Terlebih Dahulu --</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Indikator Informasi Kelas -->
+          <div class="flex items-center justify-between text-[11px] text-slate-400 pt-1 border-t border-slate-100">
+            <span id="hint-kelas-text">Tersedia 49 kelas (Reguler, Prima, ICP, IUPP, CTP, Atlet, dsb).</span>
+            <span id="hint-jumlah-kelas" class="font-bold text-teal-700"></span>
+          </div>
         </div>
 
         <!-- KARTU 3: TANGGAL ULANGAN -->
