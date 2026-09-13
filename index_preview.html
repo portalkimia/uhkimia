@@ -321,7 +321,7 @@
               <span>SMA Progresif Bumi Shalawat &bull; Tahun Ajaran 2026/2027</span>
             </p>
             <p class="text-xs sm:text-sm text-slate-600 mt-2 leading-relaxed">
-              Silakan lengkapi formulir di bawah ini untuk mendaftarkan jadwal UH CBT kelas Anda. Jadwal antar kelas <strong>diperbolehkan bersamaan</strong> pada jam yang sama (CBT simultan) dan otomatis tampil di <strong>Kalender Rekap Sekolah</strong>.
+              Silakan lengkapi formulir di bawah ini untuk menjadwalkan Ulangan Harian (UH) CBT kelas Anda. Pengajuan jadwal dilakukan <strong>paling lambat H-7 (1 minggu sebelum pelaksanaan ujian)</strong>. Jadwal akan otomatis tercatat pada <strong>Kalender Rekap Sekolah</strong>. Setelah berhasil menjadwalkan, mohon segera melakukan konfirmasi ke pihak <strong>TQA</strong>.
             </p>
           </div>
           <span class="hidden sm:inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 flex-shrink-0">
@@ -1357,6 +1357,38 @@ function handleOfflineSimulation(action, data) {
   return Promise.resolve({ success: true });
 }
 
+/**
+ * Sanitasi string tanggal menjadi format YYYY-MM-DD standar ISO
+ */
+function sanitizeDateStr(val) {
+  if (!val) return "";
+  const s = String(val).trim();
+  const m = s.match(/(\d{4}-\d{2}-\d{2})/);
+  if (m) return m[1];
+  const d = new Date(val);
+  if (!isNaN(d.getTime())) {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+  return s.substring(0, 10);
+}
+
+/**
+ * Sanitasi waktu menjadi format HH:mm standar
+ * Mampu mengekstrak waktu dari string tanggal/jam otomatis Google Sheets (misal 1899)
+ */
+function sanitizeTimeStr(val) {
+  if (!val) return "";
+  const s = String(val).trim();
+  const m = s.match(/(\d{1,2}:\d{2})/);
+  if (m) {
+    return m[1].length === 4 ? '0' + m[1] : m[1];
+  }
+  return "";
+}
+
 function calculateOfflineWaktu(tanggalStr, jpMulai, jpSelesai) {
   const date = new Date(tanggalStr + "T00:00:00");
   const dayOfWeek = date.getDay();
@@ -1479,7 +1511,7 @@ function updateApiStatusIndicator() {
 /**
  * Mengambil Seluruh Data Awal dari Backend Apps Script atau Offline Store
  */
-async function loadInitialData() {
+async function loadInitialData(targetTab = null) {
   const spinner = document.getElementById('loading-spinner');
   if (spinner) spinner.classList.remove('hidden');
   updateApiStatusIndicator();
@@ -1487,6 +1519,13 @@ async function loadInitialData() {
   try {
     const response = await requestApi('getInitData');
     if (response && response.kelas && response.bankSoal) {
+      if (response.jadwal && Array.isArray(response.jadwal)) {
+        response.jadwal.forEach(j => {
+          j.tanggal = sanitizeDateStr(j.tanggal);
+          j.jamMulai = sanitizeTimeStr(j.jamMulai);
+          j.jamSelesai = sanitizeTimeStr(j.jamSelesai);
+        });
+      }
       appData = response;
     } else {
       loadMockData();
@@ -1497,7 +1536,12 @@ async function loadInitialData() {
   } finally {
     postDataLoaded();
     if (spinner) spinner.classList.add('hidden');
-    switchTab('jadwal');
+    // Pertahankan tab yang sedang dibuka pengguna agar tidak tertutup otomatis
+    if (targetTab) {
+      switchTab(targetTab);
+    } else {
+      switchTab(currentTab || 'jadwal');
+    }
   }
 }
 
@@ -2046,10 +2090,12 @@ function handleFormJadwalSubmit(e) {
       resetStatusSoalBox();
       const customWrap = document.getElementById('wrapper-materi-custom');
       if (customWrap) customWrap.classList.add('hidden');
-      loadInitialData();
 
       if (result.isConfirmed) {
         switchTab('kalender');
+        loadInitialData('kalender');
+      } else {
+        loadInitialData('jadwal');
       }
     });
   };
@@ -2061,6 +2107,31 @@ function handleFormJadwalSubmit(e) {
       lucide.createIcons();
 
       if (response && response.success) {
+        // Pembaruan optimis ke appData.jadwal seketika
+        const newEntry = {
+          id: response.id || ("JAD-" + Date.now()),
+          namaGuru: formData.namaGuru,
+          namaKelas: formData.namaKelas,
+          tanggal: sanitizeDateStr(formData.tanggal),
+          hari: (response.detail && response.detail.hari) || "",
+          jpMulai: formData.jpMulai,
+          jpSelesai: formData.jpSelesai || formData.jpMulai,
+          jamMulai: (response.detail && sanitizeTimeStr(response.detail.jamMulai)) || "07:00",
+          jamSelesai: (response.detail && sanitizeTimeStr(response.detail.jamSelesai)) || "08:20",
+          rentangWaktu: (response.detail && response.detail.rentangWaktu) || "",
+          materi: formData.materi,
+          statusSoal: formData.statusSoal || "Tersedia",
+          tipeCbt: formData.tipeCbt || "CBT",
+          catatan: formData.catatan || "",
+          statusJadwal: "Aktif"
+        };
+        if (!appData.jadwal.some(j => j.id === newEntry.id)) {
+          appData.jadwal.unshift(newEntry);
+          updateBadgesAndCounters();
+          renderUpcomingJadwalList();
+          if (calendar) renderCalendarEvents();
+        }
+
         handleSuccessFeedback(response.detail, false);
       } else {
         Swal.fire({
@@ -2267,8 +2338,12 @@ function renderCalendarEvents() {
       color = '#9333ea'; // Ungu (Kelas 12)
     }
 
-    const startDateTime = j.jamMulai ? `${j.tanggal}T${j.jamMulai}:00` : j.tanggal;
-    const endDateTime = j.jamSelesai ? `${j.tanggal}T${j.jamSelesai}:00` : null;
+    const cleanDate = sanitizeDateStr(j.tanggal);
+    const timeStart = sanitizeTimeStr(j.jamMulai) || sanitizeTimeStr(j.rentangWaktu ? j.rentangWaktu.split('-')[0] : '') || "07:00";
+    const timeEnd = sanitizeTimeStr(j.jamSelesai) || sanitizeTimeStr(j.rentangWaktu ? j.rentangWaktu.split('-')[1] : '') || "08:20";
+
+    const startDateTime = cleanDate ? `${cleanDate}T${timeStart}:00` : cleanDate;
+    const endDateTime = (cleanDate && timeEnd) ? `${cleanDate}T${timeEnd}:00` : null;
 
     return {
       id: j.id,
@@ -2282,7 +2357,8 @@ function renderCalendarEvents() {
     };
   });
 
-  calendar.addEventSource(events);
+  calendar.removeAllEvents();
+  events.forEach(ev => calendar.addEvent(ev));
 }
 
 /**
@@ -2298,7 +2374,8 @@ function bukaModalDetailJadwal(idJadwal) {
   document.getElementById('modal-detail-guru').textContent = `Guru Pengampu: ${item.namaGuru}`;
   document.getElementById('modal-detail-tanggal').textContent = `${item.tanggal} (${item.hari || '-'})`;
   document.getElementById('modal-detail-jp').textContent = item.jpMulai === item.jpSelesai ? `JP ${item.jpMulai}` : `JP ${item.jpMulai} - ${item.jpSelesai}`;
-  document.getElementById('modal-detail-jam').textContent = item.rentangWaktu || `${item.jamMulai} - ${item.jamSelesai} WIB`;
+  const jamDisplay = item.rentangWaktu || (sanitizeTimeStr(item.jamMulai) ? `${sanitizeTimeStr(item.jamMulai)} - ${sanitizeTimeStr(item.jamSelesai)} WIB` : '-');
+  document.getElementById('modal-detail-jam').textContent = jamDisplay;
   document.getElementById('modal-detail-materi').textContent = item.materi;
   
   const statusEl = document.getElementById('modal-detail-status-soal');
